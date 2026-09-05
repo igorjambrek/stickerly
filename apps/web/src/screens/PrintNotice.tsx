@@ -70,7 +70,7 @@ export function PrintNotice({ token, onBack }: { token: string; onBack: () => vo
     );
   }
 
-  const parts = printParts(t, summary, album.title);
+  const parts = printParts(t, summary, album.title, album.lang);
   const shopNote = printShopNote(t, parts);
   const accent = getTemplate(album.templateId).palette.badge;
 

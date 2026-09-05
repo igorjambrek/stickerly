@@ -59,20 +59,20 @@ export function printRoutes(repo: Repo) {
     app.get<{ Params: TokenParams }>('/api/albums/:token/print/cover.pdf', async (req, reply) => {
       const input = inputFor(req.params.token);
       const bytes = await buildCoverPdf(input);
-      return sendPdf(reply, bytes, printFileName(input.album.title, 'cover'));
+      return sendPdf(reply, bytes, printFileName(input.album.title, 'cover', input.album.lang));
     });
 
     app.get<{ Params: TokenParams }>('/api/albums/:token/print/pages.pdf', async (req, reply) => {
       const input = inputFor(req.params.token);
       const result = await buildPagesPdf(input);
-      return sendPdf(reply, result.bytes, printFileName(input.album.title, 'pages'));
+      return sendPdf(reply, result.bytes, printFileName(input.album.title, 'pages', input.album.lang));
     });
 
     app.get<{ Params: TokenParams }>('/api/albums/:token/print/stickers.pdf', async (req, reply) => {
       const input = inputFor(req.params.token);
       const layout = (req.query as Record<string, unknown>)?.layout === 'safe' ? ('safe' as const) : ('full' as const);
       const result = await buildStickersPdf({ ...input, layout });
-      return sendPdf(reply, result.bytes, printFileName(input.album.title, 'stickers'));
+      return sendPdf(reply, result.bytes, printFileName(input.album.title, 'stickers', input.album.lang));
     });
   };
 }

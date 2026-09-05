@@ -8,7 +8,7 @@
  * carries in its own metadata.
  */
 
-import type { PartPrintInfo, PrintPart, Translate } from '@album/shared';
+import type { Lang, PartPrintInfo, PrintPart, Translate } from '@album/shared';
 import { PRINT_PARTS, describePart, printFileName } from '@album/shared';
 import type { PrintSummary } from './api.ts';
 
@@ -19,13 +19,17 @@ export const PART_LOOK: Record<PrintPart, { icon: string; chip: string }> = {
   stickers: { icon: '✨', chip: 'sticky' },
 };
 
-/** The three parts of the job, in the order they go into the printer. */
-export const printParts = (t: Translate, summary: PrintSummary, title: string): PartPrintInfo[] =>
+/**
+ * The three parts of the job, in the order they go into the printer. `lang` is
+ * the album's own, so the filename the download wears here matches the one the
+ * server writes into `content-disposition` and the PDF's metadata.
+ */
+export const printParts = (t: Translate, summary: PrintSummary, title: string, lang: Lang): PartPrintInfo[] =>
   PRINT_PARTS.map((part) =>
     describePart(t, part, {
       sheet: part === 'stickers' ? summary.stickerPaper : summary.sheetPaper,
       sheets: { cover: summary.coverSheets, pages: summary.pageSheets, stickers: summary.stickerSheets }[part],
-      file: printFileName(title, part),
+      file: printFileName(title, part, lang),
     }),
   );
 

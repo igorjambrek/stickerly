@@ -18,7 +18,7 @@ import type { AlbumSize } from './geometry.ts';
 import { fillerPagesNeeded } from './imposition.ts';
 import { countFilled } from './numbering.ts';
 import type { Translate } from './i18n.ts';
-import type { Album } from './types.ts';
+import type { Album, Lang } from './types.ts';
 
 /** One of the three PDFs. Doubles as the URL segment and the i18n key suffix. */
 export type PrintPart = 'cover' | 'pages' | 'stickers';
@@ -26,11 +26,51 @@ export type PrintPart = 'cover' | 'pages' | 'stickers';
 /** In the order they go into the printer. */
 export const PRINT_PARTS: readonly PrintPart[] = ['cover', 'pages', 'stickers'];
 
-/** The half of the filename that says which part this is. */
-export const PART_SLUG: Record<PrintPart, string> = {
-  cover: 'korice',
-  pages: 'strane',
-  stickers: 'nalepnice',
+/**
+ * The half of the filename that says which part this is, in the album's own
+ * language so a parent recognises it in their downloads folder. ASCII only —
+ * the Cyrillic languages carry a transliterated word, because a filename is no
+ * place to test a browser's feelings about a non-Latin byte.
+ */
+export const PART_SLUG: Record<Lang, Record<PrintPart, string>> = {
+  'sr-Cyrl': { cover: 'korice', pages: 'strane', stickers: 'nalepnice' },
+  'sr-Latn': { cover: 'korice', pages: 'strane', stickers: 'nalepnice' },
+  en: { cover: 'cover', pages: 'pages', stickers: 'stickers' },
+  ru: { cover: 'oblozhka', pages: 'stranicy', stickers: 'nakleyki' },
+};
+
+/**
+ * Cyrillic to plain Latin, so a title keeps its shape in an ASCII filename
+ * instead of being dropped to nothing (which is how every album ends up
+ * downloading as the same file). Serbian collapses its accents — Đ, Č, Š all
+ * lose the mark — and Russian follows the usual passport spelling. The map is
+ * chosen by the album's language, because the two scripts share letters they
+ * pronounce differently (ц, ч, ш, ж).
+ */
+const TRANSLIT: Record<'sr' | 'ru', Record<string, string>> = {
+  sr: {
+    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', ђ: 'dj', е: 'e', ж: 'z', з: 'z',
+    и: 'i', ј: 'j', к: 'k', л: 'l', љ: 'lj', м: 'm', н: 'n', њ: 'nj', о: 'o',
+    п: 'p', р: 'r', с: 's', т: 't', ћ: 'c', у: 'u', ф: 'f', х: 'h', ц: 'c',
+    ч: 'c', џ: 'dz', ш: 's',
+  },
+  ru: {
+    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
+    и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+    с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh',
+    щ: 'shch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+  },
+};
+
+const transliterate = (text: string, lang: Lang): string => {
+  const table = TRANSLIT[lang === 'ru' ? 'ru' : 'sr'];
+  return [...text]
+    .map((ch) => {
+      const rep = table[ch.toLowerCase()];
+      if (rep === undefined) return ch;
+      return ch === ch.toLowerCase() || rep === '' ? rep : rep[0]!.toUpperCase() + rep.slice(1);
+    })
+    .join('');
 };
 
 export interface PaperSpec {
@@ -75,18 +115,21 @@ export function printSheetCounts(album: Pick<Album, 'pages'>): Record<PrintPart,
 
 /**
  * A filename a parent can recognise in their downloads folder, and a print
- * shop can read back over the phone. ASCII only: the title may be Cyrillic,
- * and a `content-disposition` header is not the place to find out how a given
- * browser feels about that.
+ * shop can read back over the phone: the album's name, then which of the three
+ * PDFs this is, in the album's language. ASCII only — a Cyrillic title is
+ * transliterated rather than dropped, so two albums never collapse onto the
+ * same name, and a `content-disposition` header is not the place to find out
+ * how a given browser feels about a non-Latin byte.
  */
-export function printFileName(title: string, part: PrintPart): string {
-  const ascii = title
+export function printFileName(title: string, part: PrintPart, lang: Lang): string {
+  const name = transliterate(title, lang)
     .normalize('NFKD')
-    .replace(/[^\x20-\x7E]/g, '')
-    .replace(/[^A-Za-z0-9 _-]/g, '')
+    .replace(/[^A-Za-z0-9 _-]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 40);
-  return `${ascii || 'album'}-${PART_SLUG[part]}.pdf`;
+    .slice(0, 40)
+    .trim();
+  return `${name || 'album'} - ${PART_SLUG[lang][part]}.pdf`;
 }
 
 /** The paper for one part, named in the reader's language. */
@@ -137,11 +180,15 @@ export function describePart(
 }
 
 /** Same, straight from an album — for the server, which has the whole thing. */
-export const describeAlbumPart = (t: Translate, part: PrintPart, album: Pick<Album, 'pages' | 'title' | 'size'>) =>
+export const describeAlbumPart = (
+  t: Translate,
+  part: PrintPart,
+  album: Pick<Album, 'pages' | 'title' | 'size' | 'lang'>,
+) =>
   describePart(t, part, {
     sheet: sheetPaperFor(part, album.size),
     sheets: printSheetCounts(album)[part],
-    file: printFileName(album.title, part),
+    file: printFileName(album.title, part, album.lang),
   });
 
 /**

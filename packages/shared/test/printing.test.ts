@@ -83,20 +83,45 @@ describe('print sheet counts', () => {
 });
 
 describe('print file names', () => {
-  it('says which part it is, in ASCII a print shop can read back', () => {
-    assert.equal(printFileName('Мој албум', 'cover'), 'album-korice.pdf');
-    assert.equal(printFileName('Zvezde 2026', 'pages'), 'Zvezde 2026-strane.pdf');
-    assert.equal(printFileName('', 'stickers'), 'album-nalepnice.pdf');
+  it('carries the album name, transliterated, not dropped', () => {
+    // A Cyrillic title used to strip to nothing, so every album downloaded as
+    // the same "album-korice.pdf". Now it keeps its shape.
+    assert.equal(printFileName('Мој албум', 'cover', 'sr-Cyrl'), 'Moj album - korice.pdf');
+    assert.equal(printFileName('Zvezde 2026', 'pages', 'sr-Latn'), 'Zvezde 2026 - strane.pdf');
+    assert.notEqual(
+      printFileName('Свемир', 'cover', 'sr-Cyrl'),
+      printFileName('Дино', 'cover', 'sr-Cyrl'),
+      'two Cyrillic titles never collapse onto one filename',
+    );
+  });
+
+  it('says which of the three PDFs it is, in the album language', () => {
+    assert.equal(printFileName('Stars', 'cover', 'en'), 'Stars - cover.pdf');
+    assert.equal(printFileName('Stars', 'pages', 'sr-Cyrl'), 'Stars - strane.pdf');
+    assert.equal(printFileName('Космос', 'stickers', 'ru'), 'Kosmos - nakleyki.pdf');
+  });
+
+  it('falls back to a name when the title has nothing usable', () => {
+    assert.equal(printFileName('', 'stickers', 'sr-Cyrl'), 'album - nalepnice.pdf');
+    assert.equal(printFileName('!!!', 'stickers', 'en'), 'album - stickers.pdf');
+  });
+
+  it('stays ASCII a print shop can read back over the phone', () => {
+    for (const lang of LANGS) {
+      for (const part of PRINT_PARTS) {
+        assert.match(printFileName('Ђорђе & Маша', part, lang), /^[\x20-\x7E]+\.pdf$/, lang);
+      }
+    }
   });
 
   it('never lets a title run away with the filename', () => {
-    assert.ok(printFileName('x'.repeat(200), 'cover').length < 60);
+    assert.ok(printFileName('x'.repeat(200), 'cover', 'en').length < 60);
   });
 });
 
 describe('the note for the print shop', () => {
   const parts = PRINT_PARTS.map((part) =>
-    describePart(t, part, { sheet: sheetPaperFor(part, 'a3'), sheets: 3, file: printFileName('Stars', part) }),
+    describePart(t, part, { sheet: sheetPaperFor(part, 'a3'), sheets: 3, file: printFileName('Stars', part, 'en') }),
   );
 
   it('names every file, its paper and how many sheets of it', () => {
@@ -119,7 +144,7 @@ describe('the note for the print shop', () => {
     for (const lang of LANGS) {
       const say = translator(lang);
       const localised = PRINT_PARTS.map((part) =>
-        describePart(say, part, { sheet: sheetPaperFor(part, 'a4'), sheets: 2, file: printFileName('Stars', part) }),
+        describePart(say, part, { sheet: sheetPaperFor(part, 'a4'), sheets: 2, file: printFileName('Stars', part, lang) }),
       );
       const note = printShopNote(say, localised);
       assert.doesNotMatch(note, /[{}]/, `${lang}: an unfilled placeholder`);
