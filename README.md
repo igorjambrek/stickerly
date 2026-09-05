@@ -161,13 +161,25 @@ secret token like everything else, so nobody needs an account to open it.
 One container plus a volume. Runs comfortably in 512 MB.
 
 ```bash
-cp .env.example .env       # set SITE_ADDRESS to your domain
+cp .env.example .env       # set SITE_ADDRESS and API_ADDRESS to your domains
 docker compose up -d --build
 ```
 
-Caddy terminates TLS and gets a certificate for `SITE_ADDRESS` automatically.
+Caddy terminates TLS and gets certificates for both names automatically.
 Everything that must survive a restart — the SQLite database and uploaded
 photos — lives in the `album-data` volume at `/data`.
+
+### Two names, one origin
+
+`SITE_ADDRESS` serves the album. `API_ADDRESS` serves the same container's
+`/api` under a name of its own, and 404s everything else.
+
+The editor is *not* pointed at `API_ADDRESS`. It calls `/api` with relative
+paths, so it stays on one origin with the API — which is what makes the
+passport header safe to send and CSRF a non-question (see the comment on
+`DEVICE_HEADER` in `apps/server/src/app.ts`). Putting the editor on the API
+hostname would mean CORS, and would give that reasoning away for nothing. So
+`API_ADDRESS` is for callers that are not the editor.
 
 This has been kept deliberately cheap to host. PDFs are drawn with `pdf-lib`
 rather than rendered through headless Chrome, so there is no browser in the
@@ -183,9 +195,43 @@ runtime image never gets a compiler.
 Back up by copying the volume:
 
 ```bash
-docker run --rm -v album_album-data:/data -v "$PWD":/backup alpine \
+docker run --rm -v nalepko_album-data:/data -v "$PWD":/backup alpine \
   tar czf /backup/album-backup.tar.gz -C /data .
 ```
+
+(The volume carries the compose project name as a prefix — `nalepko_` when the
+checkout is in `/opt/nalepko`, `album_` when it is in `album/`. `docker volume
+ls` settles it.)
+
+### On Oracle Cloud, from nothing
+
+[infra/oci](infra/oci) builds the whole thing with Terraform, inside the Always
+Free allowance: one `VM.Standard.A1.Flex` at 4 OCPUs and 24 GB — the entire
+Ampere allowance — on a 50 GB boot volume, in a VCN with a single public subnet.
+
+```bash
+terraform -chdir=infra/oci init
+terraform -chdir=infra/oci apply      # prints the IP to put in DNS
+infra/oci/deploy.sh                   # copy the tree up, build it there
+```
+
+Three things about it are worth knowing:
+
+- **The public IP is reserved, not ephemeral.** It outlives the instance, so the
+  DNS records survive a rebuild. That is why the instance is created with
+  `assign_public_ip = false` and the address is attached separately.
+- **Two firewalls have to agree.** The VCN security list is the outer gate and
+  the instance's own iptables is the inner one; Oracle's Ubuntu image ships a
+  ruleset that rejects everything except 22, so `cloud-init.yaml` opens 80 and
+  443 there as well. A box that answers ping and nothing else is almost always
+  this.
+- **Ampere capacity is per availability domain and comes and goes.** If apply
+  fails with *out of host capacity*, set `availability_domain` to 2 or 3 and
+  try again.
+
+The instance builds its own ARM image — four cores manage it in a couple of
+minutes, which is one less thing to host than a registry. `deploy.sh` waits for
+first boot to finish before it tries, and never uploads `data/`.
 
 ---
 
