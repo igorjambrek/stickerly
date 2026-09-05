@@ -9,6 +9,12 @@ services:
       # rate limiter on pairing and invite codes counts per address, and without
       # this every request would look like it came from Caddy itself.
       TRUST_PROXY: '1'
+      # Picture search. Empty is a working configuration: it then uses
+      # Openverse, which needs no credentials. Set both Google values to search
+      # the web instead, or PICTURE_SEARCH=off to drop the feature entirely.
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GOOGLE_CSE_ID: ${GOOGLE_CSE_ID:-}
+      PICTURE_SEARCH: ${PICTURE_SEARCH:-}
     volumes:
       - album-data:/data
     # Not published directly: Caddy terminates TLS in front of it.

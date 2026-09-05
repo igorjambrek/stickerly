@@ -23,8 +23,10 @@ import { useIdentity } from '../identity.ts';
 import { useLangStore, useT } from '../lang.ts';
 import { suggestNickname } from '../nickname.ts';
 import { readRecent, rememberAlbum } from '../store.ts';
+import { PHONE, useMedia } from '../useMedia.ts';
 import { CoverSheet, type CoverPhoto } from '../components/CoverSheet.tsx';
 import { CoverPicker } from '../components/CoverPicker.tsx';
+import { LangSwitch } from '../components/LangSwitch.tsx';
 
 const GROUPS: { key: Template['group']; labelKey: string }[] = [
   { key: 'action', labelKey: 'home.group.action' },
@@ -155,6 +157,8 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
   const [ownerTouched, setOwnerTouched] = useState(false);
   const localRecent = useMemo(readRecent, []);
   const photoUrl = useRef<string | null>(null);
+  const preview = useRef<HTMLElement>(null);
+  const phone = useMedia(PHONE);
 
   /**
    * A name is waiting in the box before the child gets there — theirs if they
@@ -277,15 +281,10 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
           {t('app.name')}
         </span>
         <span className="spacer" />
-        <div className="langswitch">
-          {(['sr-Cyrl', 'sr-Latn', 'en', 'ru'] as Lang[]).map((code) => (
-            <button key={code} type="button" aria-pressed={lang === code} onClick={() => setLang(code)}>
-              {t(`lang.${code}`)}
-            </button>
-          ))}
-        </div>
+        <LangSwitch lang={lang} onPick={setLang} />
         <button type="button" className="btn btn--ghost" onClick={onPassport}>
-          {identity.person ? getAvatar(identity.person.avatar).emoji : '🪪'} {t('passport.open')}
+          {identity.person ? getAvatar(identity.person.avatar).emoji : '🪪'}
+          <span className="btn__label">{t('passport.open')}</span>
         </button>
       </header>
 
@@ -444,7 +443,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
           </section>
         </div>
 
-        <aside className="home__preview">
+        <aside className="home__preview" ref={preview}>
           <div className="preview">
             <h3 className="group__name">{t('home.preview')}</h3>
             <CoverSheet
@@ -476,6 +475,52 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
           </div>
         </aside>
       </div>
+
+      {/*
+        On a phone the cover sits at the bottom of a long page, so the thing
+        being made and the button that makes it would both be out of sight for
+        most of the making. This keeps them on the screen the whole way down;
+        the thumbnail scrolls back to the full-size cover.
+      */}
+      {phone && (
+        <div className="makebar">
+          {error && <p className="makebar__error">{error}</p>}
+
+          <div className="makebar__row">
+            <button
+              type="button"
+              className="makebar__thumb"
+              aria-label={t('home.preview')}
+              onClick={() => preview.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+            >
+              <CoverSheet
+                template={chosen}
+                variantId={variantId}
+                title=""
+                lang={lang}
+                photo={coverPhoto}
+                bare
+              />
+            </button>
+
+            <span className="makebar__text">
+              <strong>{title.trim() || chosen.name[lang]}</strong>
+              <span>
+                {PAPER_NAME[size]} · {t('home.perPage', { n: layout.slotsPerPage })}
+              </span>
+            </span>
+
+            <button
+              type="button"
+              className="btn btn--primary"
+              disabled={busy || !title.trim() || !ownerName.trim()}
+              onClick={create}
+            >
+              {busy ? t('home.creating') : t('home.create')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

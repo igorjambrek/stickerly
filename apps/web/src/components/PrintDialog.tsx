@@ -23,6 +23,7 @@ import { printShopNote } from '@album/shared';
 import { api, type PrintSummary } from '../api.ts';
 import { useT } from '../lang.ts';
 import { PART_LOOK, noticePath, printParts } from '../printing.ts';
+import { Dialog } from './Dialog.tsx';
 
 export interface PrintDialogProps {
   token: string;
@@ -89,72 +90,73 @@ export function PrintDialog({ token, title, template, onClose }: PrintDialogProp
   };
 
   return (
-    <div className="scrim" onClick={onClose} role="presentation">
-      <div className="dialog dialog--wide" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <h2 className="dialog__title">{t('print.title')}</h2>
-
-        {failed && <p style={{ color: 'var(--danger)' }}>{t('print.error')}</p>}
-        {!summary && !failed && <p style={{ color: 'var(--muted)' }}>{t('print.making')}</p>}
-
-        {summary && (
-          <>
-            <p className="hint" style={{ marginTop: 0, marginBottom: 14 }}>
-              {t('editor.albumFormat', { paper: summary.sheetPaper, n: summary.slotsPerPage })}
-            </p>
-
-            {parts.map((info) => (
-              <PartRow key={info.part} info={info} href={api.printUrl(token, info.part)} accent={accent} />
-            ))}
-
-            {summary.fillerCount > 0 && (
-              <p style={{ color: 'var(--muted)', fontSize: 15 }}>
-                {t('print.filler', { count: summary.fillerCount })}
-              </p>
-            )}
-
-            <h3 className="print-section">{t('print.howToTitle')}</h3>
-            <ol className="steps">
-              <li>{t('print.step.scale')}</li>
-              <li>{t('print.step.paper', { sheet: summary.sheetPaper })}</li>
-              <li>{t('print.step.duplex')}</li>
-              <li>{t('print.step.fold')}</li>
-              <li>{t('print.step.check')}</li>
-            </ol>
-
-            <h3 className="print-section">{t('print.shopTitle')}</h3>
-            <p className="hint" style={{ margin: '6px 0 0' }}>
-              {t('print.noticeLead')}
-            </p>
-            <div className="print-actions">
-              <a className="btn btn--primary" style={{ background: accent }} href={noticePath(token)} target="_blank" rel="noreferrer">
-                📄 {t('print.openNotice')}
-              </a>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void copy('link', `${window.location.origin}${noticePath(token)}`)}
-              >
-                🔗 {copied === 'link' ? t('editor.linkCopied') : t('print.copyLink')}
-              </button>
-            </div>
-
-            <p className="hint" style={{ margin: '16px 0 0' }}>
-              {t('print.shopHint')}
-            </p>
-            <pre className="shop-note">{shopNote}</pre>
-            <button type="button" className="btn" onClick={() => void copy('note', shopNote)}>
-              📋 {copied === 'note' ? t('print.shop.copied') : t('print.shop.copy')}
-            </button>
-          </>
-        )}
-
-        <div style={{ display: 'flex', marginTop: 24 }}>
+    <Dialog
+      variant="dialog--wide"
+      title={t('print.title')}
+      onClose={onClose}
+      footer={
+        <>
           <span className="spacer" />
           <button type="button" className="btn" onClick={onClose}>
             {t('print.close')}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {failed && <p style={{ color: 'var(--danger)' }}>{t('print.error')}</p>}
+      {!summary && !failed && <p style={{ color: 'var(--muted)' }}>{t('print.making')}</p>}
+
+      {summary && (
+        <>
+          <p className="hint" style={{ marginTop: 0, marginBottom: 14 }}>
+            {t('editor.albumFormat', { paper: summary.sheetPaper, n: summary.slotsPerPage })}
+          </p>
+
+          {parts.map((info) => (
+            <PartRow key={info.part} info={info} href={api.printUrl(token, info.part)} accent={accent} />
+          ))}
+
+          {summary.fillerCount > 0 && (
+            <p style={{ color: 'var(--muted)', fontSize: 15 }}>
+              {t('print.filler', { count: summary.fillerCount })}
+            </p>
+          )}
+
+          <h3 className="print-section">{t('print.howToTitle')}</h3>
+          <ol className="steps">
+            <li>{t('print.step.scale')}</li>
+            <li>{t('print.step.paper', { sheet: summary.sheetPaper })}</li>
+            <li>{t('print.step.duplex')}</li>
+            <li>{t('print.step.fold')}</li>
+            <li>{t('print.step.check')}</li>
+          </ol>
+
+          <h3 className="print-section">{t('print.shopTitle')}</h3>
+          <p className="hint" style={{ margin: '6px 0 0' }}>
+            {t('print.noticeLead')}
+          </p>
+          <div className="print-actions">
+            <a className="btn btn--primary" style={{ background: accent }} href={noticePath(token)} target="_blank" rel="noreferrer">
+              📄 {t('print.openNotice')}
+            </a>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void copy('link', `${window.location.origin}${noticePath(token)}`)}
+            >
+              🔗 {copied === 'link' ? t('editor.linkCopied') : t('print.copyLink')}
+            </button>
+          </div>
+
+          <p className="hint" style={{ margin: '16px 0 0' }}>
+            {t('print.shopHint')}
+          </p>
+          <pre className="shop-note">{shopNote}</pre>
+          <button type="button" className="btn" onClick={() => void copy('note', shopNote)}>
+            📋 {copied === 'note' ? t('print.shop.copied') : t('print.shop.copy')}
+          </button>
+        </>
+      )}
+    </Dialog>
   );
 }

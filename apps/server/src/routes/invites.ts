@@ -11,13 +11,14 @@
 
 import type { FastifyInstance } from 'fastify';
 import type { Identity } from '../identity.ts';
+import type { Realtime } from '../realtime.ts';
 import type { Repo } from '../repo.ts';
 import { Invalid } from '../repo.ts';
 import { config } from '../config.ts';
 import { createRateLimiter } from '../ratelimit.ts';
 import { requirePerson } from './people.ts';
 
-export function inviteRoutes(repo: Repo, identity: Identity) {
+export function inviteRoutes(repo: Repo, identity: Identity, live: Realtime) {
   const claims = createRateLimiter(config.maxClaimsPerMinute, 60_000);
 
   return async function routes(app: FastifyInstance): Promise<void> {
@@ -40,7 +41,10 @@ export function inviteRoutes(repo: Repo, identity: Identity) {
       repo.addMember(albumId, person.id);
 
       const editToken = repo.editTokenOf(albumId);
-      return { album: repo.get(editToken), editToken };
+      // The roster just grew, and the album carries the roster — so everyone
+      // already inside watches the new face appear rather than hearing about it
+      // the next time they reload.
+      return { ...live.publish(req, editToken), editToken };
     });
   };
 }

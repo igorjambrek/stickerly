@@ -31,6 +31,7 @@ npm run build             # builds apps/web into apps/web/dist
 npm start                 # one process serving API + built frontend on :3000
 npm run pdf:sample [theme] [cover] [size] [perPage] [lang]   # write korice/strane/nalepnice PDFs to tmp/ from fixture data
 npm run pdf:sample covers  # every cover in the app, one per page, to tmp/covers.pdf — the way to review cover art changes
+npm run pictures:check [query] [lang]   # ask the configured picture provider from the CLI, then fetch the first hit
 ```
 
 Tests use Node's built-in test runner via `tsx`, not a separate test framework:
@@ -66,7 +67,8 @@ always exactly 50×70mm, so a smaller album gets fewer slots, not smaller ones.
 Other load-bearing decisions (don't relitigate these without reading
 [README.md](README.md)'s "Decisions worth knowing about" section first):
 
-- **The editor shows two pages at once** — `spreads()` in `imposition.ts` pairs them the way the folded sheets do (page 1 faces the inside cover, even pages sit on the left), so a page is never judged out of the company it prints in.
+- **The editor shows two pages at once** — `spreads()` in `imposition.ts` pairs them the way the folded sheets do (page 1 faces the inside cover, even pages sit on the left), so a page is never judged out of the company it prints in. On a phone the pair becomes a scroll-snapping track instead: one half fills the screen and the other is a swipe away, which keeps the pairing without shrinking a sticker below a fingertip.
+- **A phone is a different shape, not a smaller screen** — most of it is CSS (`styles.css` is organised by area, with each area's phone rules beside its own), but three places need different markup rather than a rearrangement of the same markup, and those ask `useMedia(PHONE)` in JS: the editor's toolbar (a bar, or a `⋯` sheet), the spread, and the home screen's sticky "make it" bar. The album's actions are described once as an `actions` array in `Editor.tsx` and rendered both ways from it, so a new action cannot exist on one and not the other.
 - **Sticker numbers are never stored** — a slot's number is its reading-order position, recomputed on every read (`packages/shared/src/numbering.ts`).
 - **Album size and stickers-per-page are locked at creation** — changing either would add/destroy slots in an album that may already have photos.
 - **A cover is data**: a palette override + four artwork functions in `packages/shared/src/covers.ts`; `buildCover` composes all 25 from one skeleton (gradient sky, wash, texture, scene, emblem). Adding a cover = one entry there.
@@ -75,8 +77,12 @@ Other load-bearing decisions (don't relitigate these without reading
 - **Nicknames are generated, and gendered** — `packages/shared/src/nicknames.ts` puts an adjective in front of the avatar's own noun, and Serbian/Russian adjectives must agree with that noun's gender, so avatars carry a gender per language and adjectives carry three forms. Never generate one from `rng.ts` (seeded, for artwork); the caller supplies real entropy.
 - **A second device is added by QR, and this app has no scanner** — the QR holds an ordinary `/join/<code>` link that the other device's camera app opens. Codes (`packages/shared/src/codes.ts`) are six characters from an alphabet with no look-alikes, single-use, ten minutes, and safe only because of the rate limiter in `apps/server/src/ratelimit.ts`.
 - **Every mutation endpoint returns the whole album** — the editor never merges partial responses into local state.
+- **And says the same thing to everybody else** — `apps/server/src/realtime.ts` is a SignalR-style hub over `@fastify/websocket`: sockets grouped by album, every mutation route ending in `live.publish(req, token)`, which returns the response body *and* broadcasts it. Nothing is sent up the socket; edits stay HTTP. Every album on the wire carries a monotonic `rev` (seeded from the clock, in memory, per process) and the editor drops readings older than the one it has; the editor that caused a change is excluded by naming its socket in `x-nalepko-socket`. Conflicts are last-writer-wins by design.
 - **Paper is data too** (`packages/shared/src/printing.ts`) — which paper, how many sheets and which sides each of the three PDFs wants is described once and said three times: as a badge in the print dialog, as a note for a copy shop (also its own page, `/a/<token>/print`), and in each PDF's `Subject` metadata.
 - **Uploads are normalised on arrival** (`apps/server/src/storage.ts`) — auto-rotated from EXIF, EXIF stripped (privacy — this is a children's app), resized and re-encoded as JPEG.
+- **A picture can be found, not only owned** — an empty sticker offers every way in this device actually has: the drop zone on a desktop, camera and gallery as two buttons on a phone (`capture` is one attribute and cannot be both), and on either, "say what you want". The speech is the browser's own Web Speech API (`apps/web/src/voice.ts`), which is not local — the audio goes to the browser vendor — so it never starts on its own and the typed box beside it is always there. `PICTURE_SEARCH=off` removes the door; the editor asks `/api/features` once (`apps/web/src/features.ts`) rather than offering one that opens onto nothing.
+- **The shelf is a provider seam** (`apps/server/src/pictures.ts`) — Openverse (keyless, openly licensed, the default because it works with no configuration) or Google CSE (when `GOOGLE_API_KEY` and `GOOGLE_CSE_ID` are both set). Adding a third is one `search` function and one line in `providerFor`. Openverse caps an anonymous page at 20 and indexes mostly English titles; Google's page is 10 and its results carry no licence. A result carries the licence either way, because these albums get printed.
+- **A found picture is never fetched by address** — a result carries a `pick`, the address signed by this process with a per-process key and good for fifteen minutes, and the fetch route will only go and get a picture for a `pick` it signed itself. `apps/server/src/remotefetch.ts` is the guard behind that: https only, resolved addresses checked against the private ranges *and the socket pinned to the address that was checked* (resolving twice is the rebinding hole), redirects followed by hand through the same checks, byte cap enforced during the read. Everything from there on is the ordinary upload path — same `storeImage`, same stripping, same `live.publish`.
 - **Artwork randomness is a seeded PRNG** (`packages/shared/src/rng.ts`), never `Math.random`, so browser and PDF scatter decorations identically.
 - **Gradients are stacked opaque bands** (`gradientBands`) because `pdf-lib` has no native gradient support; bands must fully overlap the previous one or antialiasing shows seams.
 
@@ -90,16 +96,29 @@ packages/shared/src/
   avatars.ts      the 24 passport pictures, each noun gendered per language
   nicknames.ts    adjective + that avatar's noun, agreeing in gender
   codes.ts        the six-character code format, shared by both sides
+  realtime.ts     what the live socket says in both directions, and `rev`
+  pictures.ts     what a found picture is, and the tag the recogniser wants
 apps/server/src/
   pdf/            canvas.ts (mm -> points) + cover/pages/stickers builders
   repo.ts         SQLite access, scoped to an album's secret token
   identity.ts     people, devices, pairing and invite codes
   ratelimit.ts    in-memory sliding window; the real defence for short codes
+  realtime.ts     the hub: album groups, revisions, presence, the heartbeat
+  pictures.ts     the providers, and the signing that makes a `pick`
+  remotefetch.ts  fetching bytes from a host we do not control, safely
   db/migrations/  numbered .sql files, applied at boot
 apps/web/src/
   components/PageSheet, CoverSheet  mirror what the PDF prints, at editor zoom
                   InsideCoverSheet  the cover panel facing page 1 / the last page
                   QrCode, InviteDialog  showing a code; nothing here reads one
+                  Dialog            the one modal: a card, or a phone bottom sheet
+                  LangSwitch        the four languages, named or abbreviated
+                  Presence          the roster, with whoever is here right now lit
+                  PictureSearch     the microphone, the shelf, and the credits
+  live.ts         the album's socket: reconnect, catch up, write to the store
+  voice.ts        the browser's speech recognition, and whether there is any
+  features.ts     what this server can do, asked once
+  useMedia.ts     the one breakpoint the components and the stylesheet share
   screens/        Home (four choices, live preview), Editor, PrintNotice
                   (the print-shop sheet at /a/<token>/print), Passport (/me),
                   Join (/join/<code> from your own device, /i/<code> from a friend)
@@ -117,9 +136,13 @@ renders.
 
 ### Not built yet
 
-Passports, invites and per-child attribution exist; the live half of
-collaboration does not. There is no presence and no push, so two children in one
-album see each other's work on reload. Three known gaps, documented at more
-length in [README.md](README.md)'s "Not built yet": album access is still the
-edit token (so removing a member does not revoke them), a lost sole device
-cannot be recovered, and there are no editor/viewer roles.
+Passports, invites, per-child attribution, live pushes and presence all exist.
+What the live half still lacks: it is one process's memory (no second instance),
+nothing is shown mid-edit (no cursors, no "typing"), and conflicts are
+last-writer-wins with no merge. Three further gaps, documented at more length in
+[README.md](README.md)'s "Not built yet": album access is still the edit token
+(so removing a member does not revoke them), a lost sole device cannot be
+recovered, and there are no editor/viewer roles.
+
+Picture search has one of its own: nothing translates the query, so a Serbian
+child searches a mostly English index unless the deployment has Google keys.

@@ -66,6 +66,47 @@ export const config = {
   maxCodeAttempts: 5,
   /** Claim attempts allowed from one address per minute, across all codes. */
   maxClaimsPerMinute: 20,
+
+  /**
+   * Looking for a picture instead of having one.
+   *
+   * Which provider is decided by what it was given rather than by a flag
+   * nobody remembers to set: Google when both of its credentials are present,
+   * Openverse otherwise, because Openverse needs none and so is the one that
+   * works on a machine somebody just cloned this onto. `PICTURE_SEARCH=off`
+   * switches the whole feature off, and the editor stops offering it.
+   */
+  get pictures() {
+    const googleApiKey = process.env.GOOGLE_API_KEY ?? '';
+    const googleCseId = process.env.GOOGLE_CSE_ID ?? '';
+    const asked = process.env.PICTURE_SEARCH ?? '';
+
+    return {
+      provider: asked || (googleApiKey && googleCseId ? 'google' : 'openverse'),
+      googleApiKey,
+      googleCseId,
+
+      /**
+       * A screenful a child can look across without scrolling twice, and also
+       * exactly what the two providers will give: Openverse refuses an
+       * unauthenticated page bigger than 20, Google's page is 10 whatever you
+       * ask for.
+       */
+      maxResults: 20,
+      /** Both hops out: asking a provider, and fetching the picture itself. */
+      timeoutMs: 8_000,
+      /**
+       * How long a signed pick stays good. Long enough to look at every result
+       * and think about it, short enough that one that leaks is already dead.
+       */
+      pickTtlMs: 15 * 60 * 1000,
+      /** Per address, per minute. The Google free tier is 100 searches a *day*. */
+      maxSearchesPerMinute: 20,
+      maxPicksPerMinute: 30,
+      /** Named honestly, so a provider can see who is asking and rate-limit us. */
+      userAgent: 'Nalepko/1.0 (sticker album maker for children)',
+    };
+  },
 } as const;
 
 export const imagesDir = () => path.join(config.dataDir, 'images');

@@ -40,6 +40,16 @@
   --shadow: 0 2px 4px rgba(24, 36, 56, 0.06), 0 12px 28px rgba(24, 36, 56, 0.09);
   --danger: #d94848;
 
+  /*
+   * Notches, rounded corners and the home indicator, named once so no rule
+   * further down has to remember to write env() — and so a desktop browser,
+   * where every one of them is 0px, pays nothing for them.
+   */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+
   color-scheme: light;
 }
 
@@ -48,18 +58,28 @@
 }
 
 html,
-body,
-#root {
+body {
   height: 100%;
+}
+
+#root {
+  /* dvh, not %, so a phone's collapsing address bar cannot leave a strip of gap. */
+  min-height: 100dvh;
 }
 
 body {
   margin: 0;
+  /* Landscape on a notched phone puts the notch beside the content, not above it. */
+  padding-left: var(--safe-l);
+  padding-right: var(--safe-r);
   font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 17px;
   color: var(--ink);
   background: var(--ground);
   -webkit-font-smoothing: antialiased;
+  /* A tug at the top of an album should not reload it. */
+  overscroll-behavior-y: contain;
+  -webkit-tap-highlight-color: transparent;
 }
 
 h1,
@@ -69,6 +89,12 @@ h3 {
   font-weight: 700;
   margin: 0;
   line-height: 1.15;
+}
+
+button,
+a {
+  /* No 300 ms wait for a double-tap that this app never wants. */
+  touch-action: manipulation;
 }
 
 button {
@@ -100,10 +126,18 @@ input {
   box-shadow: var(--shadow);
   transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
   white-space: nowrap;
+  text-decoration: none;
 }
 
-.btn:hover:not(:disabled) {
-  transform: translateY(-2px);
+/*
+ * A touch screen has no hover: it fakes one on tap and then leaves it stuck
+ * there, so every lift-and-glow in this file is asked for a real pointer
+ * first. `:active` is the touch equivalent and stays unguarded.
+ */
+@media (hover: hover) {
+  .btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+  }
 }
 .btn:active:not(:disabled) {
   transform: translateY(1px);
@@ -129,12 +163,32 @@ input {
   min-height: 44px;
   padding: 0 14px;
 }
-.btn--ghost:hover {
-  color: var(--ink);
-  background: rgba(0, 0, 0, 0.05);
+@media (hover: hover) {
+  .btn--ghost:hover {
+    color: var(--ink);
+    background: rgba(0, 0, 0, 0.05);
+  }
 }
 .btn--danger {
   color: var(--danger);
+}
+
+/* A button that is only its icon: square, and still a full thumb across. */
+.btn--icon {
+  min-width: 52px;
+  padding: 0 12px;
+  gap: 0;
+  font-size: 21px;
+}
+.btn--ghost.btn--icon {
+  min-width: 48px;
+}
+
+/* The half of a label a narrow bar cannot afford; the icon says the rest. */
+@media (max-width: 480px) {
+  .home__bar .btn__label {
+    display: none;
+  }
 }
 
 .field {
@@ -172,7 +226,7 @@ label.label {
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 14px;
-  padding: 12px 20px;
+  padding: calc(12px + var(--safe-t)) 20px 12px;
   background: var(--paper);
   border-bottom: 1px solid var(--line);
 }
@@ -185,11 +239,18 @@ label.label {
   flex: none;
 }
 
-/* The actions keep to the right, and travel together to a row of their own. */
+/*
+ * The actions keep to the right, and travel together to a row of their own.
+ * Unlike everything else in the bar this group *may* narrow, because narrowing
+ * it wraps its buttons rather than clipping their labels.
+ */
 .topbar__actions {
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px 14px;
   margin-left: auto;
 }
@@ -209,8 +270,10 @@ label.label {
   max-width: 340px;
   background: transparent;
 }
-.topbar__title:hover {
-  border-color: var(--line);
+@media (hover: hover) {
+  .topbar__title:hover {
+    border-color: var(--line);
+  }
 }
 .topbar__title:focus {
   border-color: var(--accent);
@@ -227,6 +290,46 @@ label.label {
   color: var(--muted);
   min-width: 84px;
   white-space: nowrap;
+}
+/*
+ * The album has stopped hearing about other people's edits. Darker than the
+ * saved note beside it, because it outlasts it — but not the danger colour:
+ * nothing is broken, and everything the child does is still being saved.
+ */
+.status--offline {
+  color: var(--ink);
+  font-weight: 700;
+  min-width: 0;
+}
+
+/*
+ * On a phone the bar holds four things and no more: the way back, the album's
+ * name, whether it is saved, and the two buttons worth a permanent place —
+ * printing, which is the point of the app, and the ⋯ that keeps everything
+ * else one tap away instead of three rows deep.
+ */
+@media (max-width: 760px) {
+  .topbar {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: calc(6px + var(--safe-t)) 10px 6px;
+  }
+  .topbar__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+    font-size: 17px;
+    padding: 6px 8px;
+  }
+  .topbar__actions {
+    flex: none;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .status {
+    min-width: 0;
+    font-size: 16px;
+  }
 }
 
 .brand {
@@ -302,8 +405,10 @@ label.label {
   transition: transform 0.14s ease, border-color 0.14s ease;
   text-align: center;
 }
-.template-card:hover {
-  transform: translateY(-4px);
+@media (hover: hover) {
+  .template-card:hover {
+    transform: translateY(-4px);
+  }
 }
 .template-card[aria-pressed='true'] {
   border-color: var(--accent);
@@ -362,7 +467,7 @@ label.label {
 .editor {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  min-height: 100dvh;
 }
 
 .editor__stage {
@@ -382,15 +487,21 @@ label.label {
   max-width: 100%;
 }
 
+/* Each half is a box the page sits in, so a phone can give it the whole screen. */
+.spread__half {
+  display: flex;
+  justify-content: center;
+}
+
 /* Two pages share the room one page used to have, and must still fit vertically. */
 .spread .page-sheet {
   width: min(420px, 43vw, 50vh);
 }
 /* Square off the inner corners: the halves are one book, not two cards. */
-.spread > .page-sheet:first-child {
+.spread__half:first-child .page-sheet {
   border-radius: 8px 2px 2px 8px;
 }
-.spread > .page-sheet:last-child {
+.spread__half:last-child .page-sheet {
   border-radius: 2px 8px 8px 2px;
 }
 
@@ -432,10 +543,40 @@ label.label {
   font-size: 15px;
 }
 
-/* What the child is looking at, said in words under it. */
+/*
+ * What the child is looking at, said in words under it, with a way off it on
+ * either side. The arrows are here rather than in the page strip because
+ * turning a page is the commonest thing in the editor and on a phone the
+ * strip is a scroll away from wherever it was left.
+ */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 10px 12px 0;
+}
+.pager__arrow {
+  flex: none;
+  min-width: 52px;
+  min-height: 52px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--ink);
+}
+.pager__arrow:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
 .spread-note {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
-  padding: 0 20px;
   text-align: center;
   font-size: 14px;
   color: var(--muted);
@@ -443,19 +584,59 @@ label.label {
 .spread-note strong {
   color: var(--ink);
 }
+/* The counts and the swipe hint, on lines of their own where the room is thin. */
+.spread-note__hint {
+  display: block;
+  font-size: 13px;
+}
 
-/* A phone cannot show two pages side by side and keep a slot tappable. */
+/*
+ * A phone cannot show two pages side by side and keep a slot tappable, so the
+ * spread becomes a track that snaps: one half fills the screen, and the other
+ * is a swipe away rather than a scroll away. Stacking them instead — which is
+ * what this used to do — meant the facing page was off the bottom of the
+ * screen, which is the one thing the spread exists to prevent.
+ */
 @media (max-width: 760px) {
-  .spread {
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
+  .editor__stage {
+    padding: 12px 0 0;
   }
+  .spread {
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .spread::-webkit-scrollbar {
+    display: none;
+  }
+  .spread__half {
+    flex: 0 0 100%;
+    scroll-snap-align: center;
+    padding: 0 10px;
+  }
+  /*
+   * Width is settled by the height left over, not the other way round: a page
+   * is 210 x 297, so a page as wide as the screen is one and a half screens
+   * tall and the page strip goes over the horizon. 0.707 is 210/297, and the
+   * 204px is the bar, the pager and the strip above and below it.
+   *
+   * The floor is for a phone held sideways, where that sum leaves almost
+   * nothing: below about 260px a sticker stops being worth tapping, so the
+   * page keeps its size and the screen scrolls instead. Which is the right way
+   * round — a page too small to use is worse than a page you have to scroll.
+   */
   .spread .page-sheet,
-  .spread > .page-sheet:first-child,
-  .spread > .page-sheet:last-child {
-    width: min(420px, 88vw);
-    border-radius: 8px;
+  .spread__half:first-child .page-sheet,
+  .spread__half:last-child .page-sheet {
+    width: clamp(260px, calc((100dvh - 204px) * 0.707), 440px);
+    max-width: 100%;
+    border-radius: 10px;
   }
   .spread__spine {
     display: none;
@@ -496,12 +677,25 @@ label.label {
   width: 100%;
   padding: 0;
 }
-.page-sheet__heading:hover {
-  border-color: rgba(0, 0, 0, 0.15);
+@media (hover: hover) {
+  .page-sheet__heading:hover {
+    border-color: rgba(0, 0, 0, 0.15);
+  }
 }
 .page-sheet__heading:focus {
   outline: none;
   border-color: var(--accent);
+}
+/*
+ * The heading is printed-size, which on a phone is well under the 16px below
+ * which iOS zooms the whole page the moment a field takes focus — and never
+ * zooms back out. It is only while typing, so it borrows a readable size for
+ * exactly that long. `!important` because the printed size is an inline style.
+ */
+@media (max-width: 760px) {
+  .page-sheet__heading:focus {
+    font-size: 16px !important;
+  }
 }
 
 .slot {
@@ -510,10 +704,15 @@ label.label {
   padding: 0;
   overflow: visible;
   transition: transform 0.12s ease;
+  /* A press-and-hold here lifts the sticker; it must not also offer to copy it. */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
 }
-.slot:hover {
-  transform: scale(1.03);
-  z-index: 3;
+@media (hover: hover) {
+  .slot:hover {
+    transform: scale(1.03);
+    z-index: 3;
+  }
 }
 .slot--dragging {
   opacity: 0.35;
@@ -575,6 +774,32 @@ label.label {
   padding: 14px 20px 26px;
 }
 
+/*
+ * On a phone the strip is one row that scrolls, not six that wrap: an album
+ * of twenty pages would otherwise push the album itself off the screen. The
+ * editor scrolls the current pair back into it after every page turn.
+ */
+@media (max-width: 760px) {
+  .pagestrip {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-padding: 0 45%;
+    padding: 8px 12px calc(12px + var(--safe-b));
+  }
+  .pager {
+    padding-top: 6px;
+  }
+  .pagestrip::-webkit-scrollbar {
+    display: none;
+  }
+  .pagepair,
+  .pagestrip > .pagechip {
+    flex: none;
+  }
+}
+
 /* One group per spread: the strip says which pages are seen together. */
 .pagepair {
   display: flex;
@@ -605,25 +830,37 @@ label.label {
 
 /* --- Dialogs ------------------------------------------------------------- */
 
+/*
+ * One dialog, two shapes. On a wide screen it is a card in the middle of the
+ * page; on a phone it rises from the bottom edge, where the thumb already is.
+ * Either way the title bar and the buttons hold still and only the middle
+ * scrolls, so the way out of a long dialog is never a scroll away.
+ */
 .scrim {
   position: fixed;
   inset: 0;
   z-index: 50;
   display: grid;
   place-items: center;
-  padding: 20px;
+  padding: calc(20px + var(--safe-t)) calc(20px + var(--safe-r)) calc(20px + var(--safe-b))
+    calc(20px + var(--safe-l));
   background: rgba(18, 26, 40, 0.55);
   backdrop-filter: blur(3px);
 }
 
 .dialog {
+  display: flex;
+  flex-direction: column;
   width: min(560px, 100%);
-  max-height: 92vh;
-  overflow: auto;
+  max-height: 100%;
+  overflow: hidden;
   background: var(--paper);
   border-radius: 24px;
-  padding: 26px;
   box-shadow: 0 30px 80px rgba(10, 18, 32, 0.35);
+  animation: dialog-rise 0.16s ease-out;
+}
+.dialog:focus {
+  outline: none;
 }
 .dialog--wide {
   width: min(720px, 100%);
@@ -632,10 +869,158 @@ label.label {
 .dialog--cover {
   width: min(880px, 100%);
 }
+/* A list of album actions wants to be a column, not a page. */
+.dialog--menu {
+  width: min(420px, 100%);
+}
 
+@keyframes dialog-rise {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog {
+    animation: none;
+  }
+}
+
+.dialog__bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 22px 20px 8px 26px;
+}
 .dialog__title {
+  flex: 1;
+  min-width: 0;
   font-size: 26px;
-  margin-bottom: 6px;
+}
+.dialog__x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--ground);
+  color: var(--muted);
+  font-size: 18px;
+}
+@media (hover: hover) {
+  .dialog__x:hover {
+    color: var(--ink);
+  }
+}
+
+.dialog__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 8px 26px 22px;
+}
+
+.dialog__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 26px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+}
+
+/* A sheet: full width, off the bottom edge, and clear of the home indicator. */
+@media (max-width: 640px) {
+  .scrim {
+    padding: 0;
+    place-items: end stretch;
+  }
+  .dialog,
+  .dialog--wide,
+  .dialog--cover,
+  .dialog--menu {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 24px 24px 0 0;
+    animation-name: sheet-rise;
+  }
+  .dialog__bar {
+    padding: 16px 12px 6px 18px;
+  }
+  .dialog__title {
+    font-size: 21px;
+  }
+  .dialog__body {
+    padding: 6px 18px 18px;
+  }
+  /* No button bar below to hold the sheet off the home indicator, so this does. */
+  .dialog__body:last-child {
+    padding-bottom: calc(18px + var(--safe-b));
+  }
+  .dialog__foot {
+    padding: 12px 18px calc(12px + var(--safe-b));
+  }
+  /* Buttons share the last row evenly; nothing is pushed off to one side. */
+  .dialog__foot .spacer {
+    display: none;
+  }
+  .dialog__foot .btn {
+    flex: 1 1 44%;
+    min-width: 0;
+    padding: 0 16px;
+    white-space: normal;
+  }
+}
+
+@keyframes sheet-rise {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+/* --- The album's other actions, as a list ---------------------------------- */
+
+.menu__facts {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.menu__members {
+  margin-top: 14px;
+}
+.menu__list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.menu__item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  border-radius: 14px;
+  background: var(--ground);
+  font-weight: 700;
+  text-align: left;
+}
+.menu__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.menu__item--danger {
+  color: var(--danger);
+}
+.menu__icon {
+  flex: none;
+  width: 24px;
+  text-align: center;
+  font-size: 20px;
 }
 
 .dropzone {
@@ -643,7 +1028,7 @@ label.label {
   place-items: center;
   gap: 8px;
   aspect-ratio: 50 / 70;
-  width: 220px;
+  width: min(220px, 62vw);
   margin: 0 auto;
   border: 3px dashed var(--line);
   border-radius: 16px;
@@ -657,9 +1042,188 @@ label.label {
   color: var(--ink);
 }
 
+/* --- Where a picture comes from ------------------------------------------ */
+
+/*
+ * An empty sticker offers every way in that this device actually has. On a
+ * desktop that is the drop zone above plus one button; on a phone it is three
+ * buttons, because there is nothing to drag and no mouse to drag it with.
+ */
+.photosource {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+.photosource .dropzone {
+  margin: 0;
+}
+.photosource__way {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(320px, 100%);
+  min-height: 60px;
+  padding: 10px 18px;
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  background: var(--ground);
+  text-align: left;
+}
+.photosource__text strong {
+  display: block;
+  font-size: 17px;
+}
+.photosource__text span {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+.photosource__way:disabled {
+  opacity: 0.5;
+}
+.photosource__icon {
+  flex: none;
+  font-size: 26px;
+  line-height: 1;
+}
+
+/* --- Asking for a picture out loud ---------------------------------------- */
+
+.picsearch {
+  display: grid;
+  gap: 12px;
+}
+.picsearch__ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.picsearch__field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.picsearch__go {
+  flex: none;
+}
+/*
+ * Round, and the biggest thing in the row: it is the button a child who cannot
+ * yet spell `лав` is meant to find first.
+ */
+.picsearch__mic {
+  flex: none;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: var(--ground);
+  font-size: 24px;
+  line-height: 1;
+}
+.picsearch__mic--on {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--danger) 14%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .picsearch__mic--on {
+    animation: none;
+  }
+}
+
+.picsearch__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: center;
+}
+.picsearch__note--bad {
+  color: var(--danger);
+}
+
+.picsearch__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 10px;
+  max-height: min(48vh, 420px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.picsearch__hit {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 14px;
+  background: var(--ground);
+  overflow: hidden;
+}
+.picsearch__hit:hover,
+.picsearch__hit:focus-visible {
+  border-color: var(--accent);
+}
+.picsearch__hit:disabled {
+  opacity: 0.55;
+}
+.picsearch__hit--taking {
+  opacity: 1;
+  border-color: var(--accent);
+}
+/* A sticker is 50 x 70, so a result is shown in the shape it will end up. */
+.picsearch__hit img {
+  width: 100%;
+  aspect-ratio: 50 / 70;
+  object-fit: cover;
+  display: block;
+  background: var(--line);
+}
+/* The credit travels with the picture, because the album ends up on paper. */
+.picsearch__credit {
+  display: block;
+  padding: 4px 8px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  text-align: left;
+}
+.picsearch__source {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picsearch__back {
+  justify-self: start;
+}
+
+@media (max-width: 760px) {
+  /* A thumb needs the row to breathe, and the search button its own line. */
+  .picsearch__ask {
+    flex-wrap: wrap;
+  }
+  .picsearch__field {
+    flex: 1 1 140px;
+  }
+  .picsearch__go {
+    flex: 1 1 100%;
+    order: 3;
+  }
+  .picsearch__grid {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    max-height: 42vh;
+  }
+}
+
 .framer {
   position: relative;
-  width: 220px;
+  width: min(220px, 62vw);
   aspect-ratio: 50 / 70;
   margin: 0 auto;
   border-radius: 12px;
@@ -765,8 +1329,14 @@ label.label {
   margin: 0 auto;
   padding: 16px 16px 72px;
 }
+@media (max-width: 760px) {
+  .notice {
+    padding: 8px 14px calc(40px + var(--safe-b));
+  }
+}
 .notice__bar {
   display: flex;
+  padding-top: var(--safe-t);
   margin-bottom: 8px;
 }
 .notice__title {
@@ -802,7 +1372,7 @@ label.label {
 }
 
 /* One thumb-width column once a phone runs out of room for a row. */
-@media (max-width: 520px) {
+@media (max-width: 560px) {
   .print-row {
     flex-wrap: wrap;
   }
@@ -857,7 +1427,7 @@ label.label {
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 28px;
+  bottom: calc(28px + var(--safe-b));
   transform: translateX(-50%);
   z-index: 90;
   background: #1f2733;
@@ -880,13 +1450,41 @@ label.label {
 
 .langswitch {
   display: inline-flex;
+  flex-wrap: wrap;
   gap: 2px;
   padding: 3px;
   border-radius: 999px;
   background: var(--ground);
 }
+.langswitch__short {
+  display: none;
+}
+/*
+ * `Ћирилица · Latinica · English · Русский` is most of a phone's width before
+ * anything else in the bar has had a turn, so a narrow screen gets the codes.
+ * The album menu has room for the names again, and takes it.
+ */
+@media (max-width: 900px) {
+  .langswitch__long {
+    display: none;
+  }
+  .langswitch__short {
+    display: inline;
+  }
+}
+.dialog--menu .langswitch {
+  display: flex;
+  justify-content: space-between;
+}
+.dialog--menu .langswitch__long {
+  display: inline;
+}
+.dialog--menu .langswitch__short {
+  display: none;
+}
 .langswitch button {
-  padding: 7px 12px;
+  min-height: 40px;
+  padding: 7px 14px;
   border-radius: 999px;
   font-size: 14px;
   font-weight: 700;
@@ -902,7 +1500,10 @@ label.label {
 
 .home__bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
+  padding-top: var(--safe-t);
 }
 
 .home__layout {
@@ -948,6 +1549,101 @@ label.label {
 }
 .preview .btn {
   width: 100%;
+}
+
+/*
+ * Making an album on a phone.
+ *
+ * The four choices are a long page, and the cover they add up to is at the
+ * bottom of it — so the cover and the button that commits to it follow the
+ * child down instead. The panel's own button would then be the same button
+ * twice, so on a phone the bar *is* it, and the thumbnail scrolls back up to
+ * the full-size preview.
+ */
+@media (max-width: 760px) {
+  .home {
+    padding: 16px 14px 12px;
+  }
+  .home__hero {
+    padding: 10px 0 16px;
+  }
+  .home__hero p {
+    font-size: 17px;
+  }
+  .home__steps {
+    gap: 14px;
+  }
+  .panel {
+    padding: 16px 14px;
+    border-radius: 16px;
+  }
+  .step {
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .step__text strong {
+    font-size: 17px;
+  }
+  .group__name {
+    margin-top: 20px;
+  }
+  .preview .btn {
+    display: none;
+  }
+
+  .makebar {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    margin: 20px -14px 0;
+    padding: 10px 14px calc(10px + var(--safe-b));
+    background: color-mix(in srgb, var(--paper) 94%, transparent);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line);
+  }
+  .makebar__row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .makebar__thumb {
+    flex: none;
+    width: 44px;
+    padding: 0;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 1px 5px rgba(20, 30, 50, 0.25);
+  }
+  .makebar__thumb .cover-sheet {
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .makebar__text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .makebar__text strong {
+    font-family: 'Comfortaa', sans-serif;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .makebar__text span {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .makebar__error {
+    margin: 0 0 8px;
+    color: var(--danger);
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .makebar .btn {
+    flex: none;
+    padding: 0 18px;
+  }
 }
 
 .step {
@@ -1089,8 +1785,10 @@ label.label {
   text-align: center;
   transition: transform 0.14s ease, border-color 0.14s ease;
 }
-.coverchip:hover {
-  transform: translateY(-3px);
+@media (hover: hover) {
+  .coverchip:hover {
+    transform: translateY(-3px);
+  }
 }
 .coverchip[aria-pressed='true'] {
   border-color: var(--accent);
@@ -1124,10 +1822,15 @@ label.label {
   border-radius: 16px;
   cursor: pointer;
 }
-.coverdrop__zone:hover,
 .coverdrop--over .coverdrop__zone {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+@media (hover: hover) {
+  .coverdrop__zone:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
 }
 .coverdrop__icon {
   font-size: 26px;
@@ -1150,6 +1853,16 @@ label.label {
 @media (max-width: 700px) {
   .coverdialog {
     grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  /*
+   * Stacked, the cover would be a whole screen tall before the picker began.
+   * A width, not a max-width: the sheet has an aspect ratio and no intrinsic
+   * size, so `margin: 0 auto` against a max-width collapses it to nothing.
+   */
+  .coverdialog__preview {
+    width: min(220px, 100%);
+    margin: 0 auto;
   }
 }
 .coverdialog__preview {
@@ -1180,8 +1893,10 @@ label.label {
   text-align: center;
   transition: transform 0.14s ease, border-color 0.14s ease;
 }
-.sizecard:hover {
-  transform: translateY(-3px);
+@media (hover: hover) {
+  .sizecard:hover {
+    transform: translateY(-3px);
+  }
 }
 .sizecard[aria-pressed='true'] {
   border-color: var(--accent);
@@ -1227,8 +1942,10 @@ label.label {
   font-weight: 700;
   transition: transform 0.14s ease, border-color 0.14s ease;
 }
-.percard:hover {
-  transform: translateY(-3px);
+@media (hover: hover) {
+  .percard:hover {
+    transform: translateY(-3px);
+  }
 }
 .percard[aria-pressed='true'] {
   border-color: var(--accent);
@@ -1265,6 +1982,18 @@ label.label {
   max-width: 720px;
   margin: 0 auto;
   padding: 0 20px 48px;
+}
+@media (max-width: 760px) {
+  .passport {
+    padding: 0 14px calc(32px + var(--safe-b));
+  }
+  .passport__card {
+    padding: 16px 14px;
+  }
+  /* Three buttons in a row of their own rather than three squeezed into one. */
+  .passport__actions .btn {
+    flex: 1 1 40%;
+  }
 }
 
 .passport__title {
@@ -1401,6 +2130,23 @@ label.label {
   background: var(--paper);
   box-shadow: inset 0 0 0 1px var(--line);
   font-size: 15px;
+}
+/*
+ * A face that is here right now, as opposed to one that has ever joined. The
+ * ring is green rather than the theme accent on purpose: the accent already
+ * means "this is the album's colour" on every page, and presence has to read at
+ * a glance without being learned. Faces are laid out with an 8px gap, which is
+ * what leaves room for a ring drawn outside the circle.
+ */
+.members__face[data-live='true'] {
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 0 0 2px #2fa16b;
+}
+.members__more {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
 }
 
 /*

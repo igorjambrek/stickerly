@@ -10,6 +10,11 @@
 	@pdf path_regexp ^/api/albums/[^/]+/print/
 	header @pdf Cache-Control "no-store"
 
+	# No websocket-specific config below: Caddy detects the Connection: Upgrade
+	# header on the album's live route and proxies it as a raw byte pipe, unlike
+	# nginx, which needs that spelled out by hand. The app's own heartbeat
+	# (apps/server/src/realtime.ts) keeps the connection from looking idle to
+	# anything in between.
 	reverse_proxy app:3000 {
 		# Building the three PDFs for a large album can take a few seconds.
 		transport http {

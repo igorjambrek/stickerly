@@ -17,6 +17,7 @@
     "build": "npm run build -w apps/web",
     "start": "npm run start -w apps/server",
     "pdf:sample": "npm run pdf:sample -w apps/server",
+    "pictures:check": "npm run pictures:check -w apps/server",
     "test": "node --import tsx --test \"packages/shared/test/*.test.ts\" \"apps/server/test/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

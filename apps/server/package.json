@@ -6,12 +6,14 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
-    "pdf:sample": "tsx src/scripts/sample.ts"
+    "pdf:sample": "tsx src/scripts/sample.ts",
+    "pictures:check": "tsx src/scripts/pictures.ts"
   },
   "dependencies": {
     "@album/shared": "*",
     "@fastify/multipart": "^9.0.1",
     "@fastify/static": "^8.0.3",
+    "@fastify/websocket": "^11.3.0",
     "@pdf-lib/fontkit": "^1.1.1",
     "better-sqlite3": "^11.7.0",
     "fastify": "^5.2.0",

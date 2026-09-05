@@ -16,6 +16,7 @@ import type { AlbumMember } from '@album/shared';
 import { formatCode, getAvatar } from '@album/shared';
 import { api, type MintedCode } from '../api.ts';
 import { useT } from '../lang.ts';
+import { Dialog } from './Dialog.tsx';
 import { QrCode } from './QrCode.tsx';
 
 export function InviteDialog({
@@ -50,36 +51,11 @@ export function InviteDialog({
   const url = code ? `${window.location.origin}/i/${code.code}` : null;
 
   return (
-    <div className="scrim" onClick={onClose} role="presentation">
-      <div className="dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <h2 className="dialog__title">{t('editor.inviteTitle')}</h2>
-        <p className="passport__hint">{t('editor.shareHint')}</p>
-
-        {error && <p className="passport__error">{error}</p>}
-
-        {url && (
-          <>
-            <QrCode value={url} className="passport__qr" />
-            <p className="passport__code">{formatCode(code!.code)}</p>
-            <p className="passport__hint">{t('passport.codeHint')}</p>
-          </>
-        )}
-
-        {members.length > 0 && (
-          <>
-            <h3>{t('editor.members')}</h3>
-            <div className="members">
-              {members.map((m) => (
-                <span key={m.id} className="members__one" title={m.nickname}>
-                  <span className="members__face">{getAvatar(m.avatar).emoji}</span>
-                  {m.nickname}
-                </span>
-              ))}
-            </div>
-          </>
-        )}
-
-        <div className="passport__actions">
+    <Dialog
+      title={t('editor.inviteTitle')}
+      onClose={onClose}
+      footer={
+        <>
           <button
             type="button"
             className="btn"
@@ -94,11 +70,38 @@ export function InviteDialog({
           <button type="button" className="btn" onClick={() => void mint()}>
             {t('editor.newInvite')}
           </button>
+          <span className="spacer" />
           <button type="button" className="btn btn--primary" onClick={onClose}>
             {t('editor.close')}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      <p className="passport__hint">{t('editor.shareHint')}</p>
+
+      {error && <p className="passport__error">{error}</p>}
+
+      {url && (
+        <>
+          <QrCode value={url} className="passport__qr" />
+          <p className="passport__code">{formatCode(code!.code)}</p>
+          <p className="passport__hint">{t('passport.codeHint')}</p>
+        </>
+      )}
+
+      {members.length > 0 && (
+        <>
+          <h3>{t('editor.members')}</h3>
+          <div className="members">
+            {members.map((m) => (
+              <span key={m.id} className="members__one" title={m.nickname}>
+                <span className="members__face">{getAvatar(m.avatar).emoji}</span>
+                {m.nickname}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+    </Dialog>
   );
 }

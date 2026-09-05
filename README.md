@@ -3,8 +3,10 @@
 Make your own Panini-style sticker album, then print it with one click.
 
 A child makes four choices — a theme, a cover, how big the album is and how
-many stickers go on a page — then drops photos into numbered slots and presses
-**Штампај албум**. Three PDFs come back:
+many stickers go on a page — then fills the numbered slots and presses
+**Штампај албум**. A slot takes a photo dragged in from a desktop, one taken or
+chosen on a phone, or one found by saying out loud what should be on it. Three
+PDFs come back:
 
 | PDF | Paper | What it is |
 | --- | --- | --- |
@@ -181,6 +183,45 @@ passport header safe to send and CSRF a non-question (see the comment on
 hostname would mean CORS, and would give that reasoning away for nothing. So
 `API_ADDRESS` is for callers that are not the editor.
 
+The album's live socket is an `/api` route like any other, so both names carry
+it and Caddy upgrades it without being told to. Behind a different proxy, the
+one thing to check is that it forwards `Upgrade` — a proxy that does not fails
+quietly, leaving an editor that saves perfectly well and never hears a word from
+anybody else.
+
+### Finding pictures
+
+Picture search works with no configuration at all, and better with some.
+
+| Provider | Set | What you get |
+| --- | --- | --- |
+| **Openverse** (default) | nothing | Openly licensed and public-domain pictures, keyless. Every result carries its licence, which matters here because the output of this app is paper. Anonymous callers get a modest rate limit and at most 20 results a page. |
+| **Google** | `GOOGLE_API_KEY` and `GOOGLE_CSE_ID` | The open web, `safe=active`, and 100 searches a day on the free tier. Used automatically as soon as both are set. |
+
+`PICTURE_SEARCH=off` switches the feature off entirely; the editor asks
+`/api/features` on load and stops offering the door.
+
+Openverse is the default because it needs nothing and its results are ones a
+child may legitimately print and hand to a friend. Its weakness is language: it
+indexes mostly English titles, so `лав` finds a handful of lions and some
+Ukrainian text that happens to contain the word, where `lion` finds twenty. If
+the children using your deployment search in Serbian or Russian, the Google keys
+are worth setting. Note that Google's results come off the open web and carry no
+licence, and the editor says so under each one.
+
+To check either without clicking through the app — which is the way to find out
+whether a key actually works — ask from the command line:
+
+```bash
+npm run pictures:check                 # whatever is configured, looking for a lion
+npm run pictures:check ракета ru
+```
+
+It goes the whole way: search, open the pick, fetch the first picture. Bytes at
+the end mean the address guard, the redirects and the size cap all worked too.
+
+Bing is not an option: Microsoft retired the Bing Search APIs in August 2025.
+
 This has been kept deliberately cheap to host. PDFs are drawn with `pdf-lib`
 rather than rendered through headless Chrome, so there is no browser in the
 image and no 1 GB memory floor — the whole image is about 490 MB, most of it
@@ -248,17 +289,21 @@ packages/shared/         geometry, imposition, numbering, themes, i18n
   art.ts                 what a theme and a cover variant are, as types
   covers.ts              all 25 covers, built from one four-part composition
   templates.ts           the six themes: palettes, page artwork, cover lists
+  realtime.ts            the live protocol: what the socket says, both ways
 apps/server/
   pdf/                   canvas.ts (mm -> points), cover, pages, stickers
   routes/                albums, images, print
   repo.ts                SQLite access, scoped to an album's secret token
+  realtime.ts            the hub: sockets grouped by album, and what they hear
   db/migrations/         numbered .sql files, applied at boot
   storage.ts             upload normalising: auto-rotate, strip EXIF, resize
 apps/web/src/
   components/PageSheet   the album page, at a different zoom to the printed one
   components/CoverSheet  the cover, mirroring what cover.ts prints
   components/CoverPicker the covers of one theme, as pictures
+  components/Presence    the roster, with whoever is here right now lit up
   screens/               Home (four choices, live preview), Editor, PrintNotice
+  live.ts                the album's socket: reconnecting, and into the store
   printing.ts            the print job described for a reader, from shared data
 assets/fonts/            the OFL fonts the PDFs embed and the browser loads
 ```
@@ -338,12 +383,94 @@ two sheets out side by side accordingly, so nothing is ever judged out of the
 company it prints in. One of the two is the *active* page: the one the page
 strip selected, and the one renaming and deleting name.
 
+**A phone gets a different shape, not a smaller one.** The album is the awkward
+case: two A4 pages side by side on a 390 px screen leaves a sticker smaller than
+the finger that has to hit it. So on a phone the spread becomes a track that
+snaps — one page fills the screen, the facing one is a swipe away, and the page
+being edited and the page on screen are kept in step in both directions. The
+page is sized from the height left over rather than the width available, because
+a page as wide as the screen is one and a half screens tall and puts the page
+strip over the horizon. Everywhere else the same three moves: dialogs rise from
+the bottom edge as sheets with their title and their buttons pinned, the editor's
+rarer actions fold into one `⋯` menu, and the home screen grows a bar that
+follows the child down the page carrying the cover so far and the button that
+commits to it. Almost all of it is CSS; the three places that need different
+markup rather than a rearrangement of it share one breakpoint through
+`useMedia.ts`.
+
+**A finger drags differently from a mouse.** A mouse starts dragging a sticker on
+the eighth pixel, which on a touch screen would mean every attempt to scroll the
+album tore a sticker off the page instead. So the editor runs a `MouseSensor` and
+a `TouchSensor` rather than one `PointerSensor`: on a touch screen a sticker has
+to be held still for a moment before it lifts, and a swipe that starts on one
+scrolls the page as it should.
+
 **Every mutation returns the whole album.** It is a few kilobytes, and it means
 the editor never merges a partial response into local state.
+
+**Everybody else is told the same thing, over a socket.** An album is meant to
+be built by more than one child, so every mutation is also pushed to whoever
+else has it open — as the whole album, the same object the request was answered
+with. [`realtime.ts`](apps/server/src/realtime.ts) is a hub in the SignalR
+sense, hand-rolled over `@fastify/websocket` because it needs nothing a hub
+framework would bring: sockets are grouped by album, the group is broadcast to,
+and the client reconnects on its own. Nothing is *sent* over the socket — edits
+stay ordinary HTTP requests, where the validation, the errors and the "saving /
+saved" note already work — which is what makes a dropped connection dull: the
+album stops moving on its own, and nothing stops working.
+
+Three things make that safe rather than merely quick:
+
+- **A revision, on every album that crosses the wire.** The same change reaches
+  an editor twice — as the answer to its own request and as the push meant for
+  everyone else — and those can arrive in either order. Each reading carries the
+  revision it was taken at, and an editor ignores anything older than what it
+  already has. Revisions are seeded from the wall clock so they keep climbing
+  across a restart.
+- **The editor that caused a change is left out of it**, by naming its own
+  socket in an `x-nalepko-socket` header on the request.
+- **The socket grants nothing.** It is opened with the album's edit token like
+  every other route, and says only what a `GET` of that album already would. The
+  passport it is greeted with buys a face in the roster, nothing more.
+
+Presence rides along: the roster in the top bar is who has ever joined, and the
+ones who have the album open right now are lit. Both halves — the groups and the
+revisions — live in this one process's memory, which is exactly as far as the
+deployment goes; a second instance would need them somewhere both could see.
+
+**Last writer wins, and that is the whole conflict story.** Two children on the
+same sticker is rare enough — the album is a grid of numbered places, and they
+naturally take different ones — that it is not worth a locking scheme a
+six-year-old would have to understand. The loser sees their change replaced,
+not merged.
 
 **Uploads are normalised on arrival** — rotated upright from EXIF, stripped of
 metadata (phone photos carry GPS coordinates, and this is a children's app),
 resized and re-encoded as JPEG.
+
+**A picture can be found, not only owned.** A child who wants a lion has no
+photograph of one, so an empty sticker offers a third way in beside the drag and
+the camera: press the microphone, say `лав`, and pick one off a shelf. The
+speech is the browser's own — no key, nothing added to the image — and the shelf
+comes from a provider behind a seam (see *Finding pictures* under Deploying).
+
+The way in matters per device, which is the same argument the rest of the phone
+layout makes. A desktop keeps the drop zone it always had; a phone, which has
+nothing to drag and no mouse to drag it with, gets `Сликај` and `Из галерије` as
+two buttons, because `capture` is the difference between opening the camera and
+opening the camera roll and one attribute cannot be both.
+
+**A found picture is never fetched by address.** A search result carries a
+`pick` — the address, signed by this process, good for fifteen minutes — and the
+fetch route will only go and get a picture for a `pick` it signed itself. "Fetch
+this URL for me" is not something this server offers to anybody, which is what
+keeps a picture search from being an open proxy into its own network. The fetch
+behind it is `remotefetch.ts`: https only, every resolved address checked
+against the private ranges *and the socket pinned to the address that was
+checked* (resolving twice is the DNS-rebinding hole), redirects followed by hand
+through the same checks, and the read abandoned the moment it passes the cap.
+From the row it writes onward a found picture is exactly an uploaded one — same
+normalising, same stripping, same file.
 
 **Artwork is deterministic.** Decorations are scattered from a seeded PRNG rather
 than `Math.random`, so the browser and the PDF scatter them identically.
@@ -367,10 +494,24 @@ blank. Both licences are in the same directory (SIL OFL).
 ## Not built yet
 
 Sharing is the reason this app has a server rather than running entirely in the
-browser. Children now have passports, invites put friends on an album's roster,
-and a sticker remembers who brought it — but the live half of collaboration is
-still missing: there is no presence, no updates arriving while you watch, and
-two children editing the same album see each other's work only on reload.
+browser. Children have passports, invites put friends on an album's roster, a
+sticker remembers who brought it, and edits now arrive while you watch, with the
+faces of whoever else is in the album lit up beside them.
+
+What the live half still stops short of:
+
+- **It is one process's memory.** Groups and revisions are held in the server
+  that owns them, so a second instance would see none of the first one's
+  sockets. Getting there is a message bus and a shared revision, not a rewrite.
+- **Nothing is shown mid-edit.** A change appears when it is saved; there is no
+  cursor, no "typing", and no sign that somebody else is holding the sticker you
+  are about to take.
+- **Last writer wins**, with no merge and no undo of somebody else's overwrite.
+
+Picture search has a gap of its own: **nothing translates the query**. A child
+searching in Serbian is searching a mostly English index unless the deployment
+has Google keys, and neither provider is asked in more than one language at a
+time.
 
 Three more things the passport layer stops short of, in the order they matter:
 

@@ -16,7 +16,10 @@ export default defineConfig({
     // The fonts are shared with the PDF generator and live at the repo root, so
     // the dev server has to be allowed to reach outside apps/web.
     fs: { allow: [repoRoot] },
-    proxy: { '/api': 'http://127.0.0.1:3000' },
+    // `ws` because the album's live connection is an /api route too, and a
+    // proxy that does not forward the upgrade fails silently: the editor still
+    // saves, it just never hears about anybody else.
+    proxy: { '/api': { target: 'http://127.0.0.1:3000', ws: true } },
   },
   build: { outDir: 'dist', emptyOutDir: true },
 });

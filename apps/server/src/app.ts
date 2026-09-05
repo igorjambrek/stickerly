@@ -9,11 +9,14 @@ import { existsSync } from 'node:fs';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import websocket from '@fastify/websocket';
 import type { Person } from '@album/shared';
 import { config } from './config.ts';
 import type { Db } from './db/index.ts';
 import { Invalid, NoPassport, NotFound, createRepo } from './repo.ts';
 import { createIdentity } from './identity.ts';
+import { createPictures } from './pictures.ts';
+import { createRealtime } from './realtime.ts';
 import { UnreadableImage } from './storage.ts';
 import { albumRoutes } from './routes/albums.ts';
 import { imageRoutes } from './routes/images.ts';
@@ -49,10 +52,20 @@ export async function createApp({ db, logger = false, serveWeb = true }: AppOpti
   const app = Fastify(options);
   const repo = createRepo(db);
   const identity = createIdentity(db);
+  const live = createRealtime(repo, identity);
+  const pictures = createPictures();
 
   await app.register(multipart, {
     limits: { fileSize: config.maxUploadBytes, files: 1, fields: 4 },
   });
+
+  /**
+   * Registered before the routes, because the album's socket route is one of
+   * them. The payload cap is generous for what a client ever sends — a `hello`
+   * carrying a device key — and mean enough that a socket cannot be used to
+   * push anything at this process.
+   */
+  await app.register(websocket, { options: { maxPayload: 4 * 1024 } });
 
   /**
    * A POST with nothing to say is ordinary here — adding a page, minting a
@@ -107,11 +120,20 @@ export async function createApp({ db, logger = false, serveWeb = true }: AppOpti
 
   app.get('/api/health', async () => ({ ok: true }));
 
-  await app.register(albumRoutes(repo));
-  await app.register(imageRoutes(repo));
+  /**
+   * What this server can do, asked once when the editor loads. Only picture
+   * search so far, and it is here rather than on the album because it is a
+   * property of the deployment, not of anybody's album — a door the editor
+   * must not offer when it opens onto nothing.
+   */
+  app.get('/api/features', async () => ({ pictureSearch: pictures.enabled }));
+
+  await app.register(live.plugin);
+  await app.register(albumRoutes(repo, live));
+  await app.register(imageRoutes(repo, live, pictures));
   await app.register(printRoutes(repo));
   await app.register(peopleRoutes(repo, identity));
-  await app.register(inviteRoutes(repo, identity));
+  await app.register(inviteRoutes(repo, identity, live));
 
   if (serveWeb && existsSync(config.webDist)) {
     await app.register(fastifyStatic, { root: config.webDist, index: ['index.html'] });

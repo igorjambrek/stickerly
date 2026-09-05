@@ -28,7 +28,9 @@ export function PrintNotice({ token, onBack }: { token: string; onBack: () => vo
     Promise.all([api.getAlbum(token), api.printSummary(token)])
       .then(([a, s]) => {
         if (!live) return;
-        setAlbum(a);
+        // A print-shop sheet is read once and taken to a counter, so it takes
+        // the album as it stands and ignores the revision that came with it.
+        setAlbum(a.album);
         setSummary(s);
       })
       .catch(() => live && setFailed(true));

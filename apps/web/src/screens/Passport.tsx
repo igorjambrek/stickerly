@@ -88,12 +88,22 @@ function AddDevice({ onDone }: { onDone: () => void }) {
 export function Passport({ onHome, onOpenAlbum }: { onHome: () => void; onOpenAlbum: (token: string) => void }) {
   const t = useT();
   const lang = useLangStore((s) => s.lang);
-  const { person, albums, checked, ensure, update } = useIdentity();
+  const { person, albums, checked, ensure, update, load } = useIdentity();
 
   const [nickname, setNickname] = useState('');
   const [typed, setTyped] = useState(false);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * Nothing has looked for this device's passport if the child arrived here
+   * straight from a link — a bookmark, or the QR on another screen — rather
+   * than through the home screen, and until something does, `checked` stays
+   * false and this screen waits forever.
+   */
+  useEffect(() => {
+    void load();
+  }, []);
 
   // Opening this screen is one of the moments a passport is worth creating.
   useEffect(() => {

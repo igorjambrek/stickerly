@@ -5,15 +5,21 @@
  * its title, its owner and its actual sticker count — and a drag to frame the
  * photo, which is the only thing here the home screen cannot offer because
  * there is no album to upload into yet.
+ *
+ * It can also go and find a picture, which the home screen again cannot: a
+ * found picture is fetched into an album, and at that point there is one.
  */
 
 import { useRef, useState, type PointerEvent } from 'react';
 import type { Album, Template } from '@album/shared';
 import { REF_PAGE, coverWantsPhoto, countFilled, panCrop } from '@album/shared';
 import { api, type CoverPatch } from '../api.ts';
+import { useFeatures } from '../features.ts';
 import { useT } from '../lang.ts';
 import { CoverPicker } from './CoverPicker.tsx';
+import { Dialog } from './Dialog.tsx';
 import { CoverSheet } from './CoverSheet.tsx';
+import { PictureSearch } from './PictureSearch.tsx';
 
 const BOX = { x: 0, y: 0, w: REF_PAGE.w, h: REF_PAGE.h };
 
@@ -28,7 +34,9 @@ export interface CoverDialogProps {
 
 export function CoverDialog({ album, template, token, onChange, onOwnerNameChange, onClose }: CoverDialogProps) {
   const t = useT();
+  const features = useFeatures();
   const [uploading, setUploading] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [crop, setCrop] = useState(album.coverCrop);
   const [ownerDraft, setOwnerDraft] = useState<string | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -46,12 +54,16 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
   const photo = image ? { url: api.imageUrl(token, image.id), w: image.w, h: image.h } : null;
   const framable = photo && coverWantsPhoto(template, album.coverVariantId);
 
+  /** However the picture arrived, it starts centred and unzoomed. */
+  function framePhoto(imageId: string) {
+    onChange({ coverImageId: imageId, coverCrop: { x: 0.5, y: 0.5, scale: 1 } });
+    setCrop({ x: 0.5, y: 0.5, scale: 1 });
+  }
+
   async function upload(file: File) {
     setUploading(true);
     try {
-      const uploaded = await api.uploadImage(token, file, 'cover');
-      onChange({ coverImageId: uploaded.id, coverCrop: { x: 0.5, y: 0.5, scale: 1 } });
-      setCrop({ x: 0.5, y: 0.5, scale: 1 });
+      framePhoto((await api.uploadImage(token, file, 'cover')).id);
     } finally {
       setUploading(false);
     }
@@ -73,11 +85,43 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
     onChange({ coverCrop: crop });
   };
 
-  return (
-    <div className="scrim" onClick={onClose} role="presentation">
-      <div className="dialog dialog--wide dialog--cover" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
-        <h2 className="dialog__title">{t('editor.coverTitle')}</h2>
+  /** Tapping outside the sheet does not blur the name box; this does its work. */
+  const close = () => {
+    commitOwnerName();
+    onClose();
+  };
 
+  return (
+    <Dialog
+      variant="dialog--cover"
+      title={t('editor.coverTitle')}
+      onClose={close}
+      footer={
+        <>
+          <span className="spacer" />
+          <button
+            type="button"
+            className="btn btn--primary"
+            style={{ background: template.palette.badge }}
+            onClick={close}
+          >
+            {t('editor.close')}
+          </button>
+        </>
+      }
+    >
+      {searching ? (
+        <PictureSearch
+          token={token}
+          lang={album.lang}
+          role="cover"
+          onPicked={(picked) => {
+            framePhoto(picked.id);
+            setSearching(false);
+          }}
+          onBack={() => setSearching(false)}
+        />
+      ) : (
         <div className="coverdialog">
           <div
             className="coverdialog__preview"
@@ -130,6 +174,7 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
               onPick={(coverVariantId) => onChange({ coverVariantId })}
               onPhoto={(file) => void upload(file)}
               onRemovePhoto={() => onChange({ coverImageId: null })}
+              onFind={features.pictureSearch ? () => setSearching(true) : undefined}
             />
 
             {framable && (
@@ -152,19 +197,7 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
             )}
           </div>
         </div>
-
-        <div style={{ display: 'flex', marginTop: 20 }}>
-          <span className="spacer" />
-          <button
-            type="button"
-            className="btn btn--primary"
-            style={{ background: template.palette.badge }}
-            onClick={onClose}
-          >
-            {t('editor.close')}
-          </button>
-        </div>
-      </div>
-    </div>
+      )}
+    </Dialog>
   );
 }

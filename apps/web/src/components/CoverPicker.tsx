@@ -28,6 +28,11 @@ export interface CoverPickerProps {
   onPick: (variantId: string) => void;
   onPhoto: (file: File) => void;
   onRemovePhoto: () => void;
+  /**
+   * Offered only where there is an album to fetch a picture into — the editor,
+   * not the home screen, which is still deciding whether to make one at all.
+   */
+  onFind?: () => void;
 }
 
 export function CoverPicker({
@@ -39,6 +44,7 @@ export function CoverPicker({
   onPick,
   onPhoto,
   onRemovePhoto,
+  onFind,
 }: CoverPickerProps) {
   const t = useT();
   const fileInput = useRef<HTMLInputElement>(null);
@@ -111,6 +117,11 @@ export function CoverPicker({
               <span>{photo ? t('home.uploadCoverHint') : t('home.coverPhotoMissing')}</span>
             </span>
           </div>
+          {onFind && (
+            <button type="button" className="btn btn--ghost" onClick={onFind}>
+              🔍 {t('editor.findPhoto')}
+            </button>
+          )}
           {photo && (
             <button type="button" className="btn btn--ghost btn--danger" onClick={onRemovePhoto}>
               {t('home.removePhoto')}

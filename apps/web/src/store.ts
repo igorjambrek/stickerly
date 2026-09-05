@@ -4,10 +4,15 @@
  * Every mutation is a round trip that returns the complete album, so there is
  * one source of truth and no optimistic-merge drift. The child sees a small
  * "saving / saved" note rather than a save button.
+ *
+ * An album can have more than one child in it, so the same state also arrives
+ * unasked, pushed down the socket in `live.ts`. Both doors lead to the same
+ * place: `accept`, which takes a whole album or nothing, and which keeps the
+ * later of two readings when the network delivers them out of order.
  */
 
 import { create } from 'zustand';
-import type { Album, Crop, Lang, Slot } from '@album/shared';
+import type { Album, AlbumUpdate, Crop, Lang, LivePeer, Slot } from '@album/shared';
 import type { CoverPatch } from './api.ts';
 import { api } from './api.ts';
 
@@ -16,19 +21,33 @@ export type Status = 'idle' | 'loading' | 'saving' | 'saved' | 'error';
 /** One step back. Deliberately shallow: it covers the accidents, not history. */
 interface UndoEntry {
   label: string;
-  run: () => Promise<Album>;
+  run: () => Promise<AlbumUpdate>;
 }
 
 interface State {
   token: string | null;
   album: Album | null;
+  /** The revision `album` was read at. Only ever goes up; see `accept`. */
+  rev: number;
   status: Status;
   error: string | null;
   undo: UndoEntry | null;
   toast: string | null;
+  /** Everybody with this album open, this browser included — see `socketId`. */
+  peers: LivePeer[];
+  /** Which of the peers is this screen. Null until the socket has said hello. */
+  socketId: string | null;
+  /**
+   * Set once the editor has a reason to say the connection is broken, which is
+   * not the same as the socket being momentarily down: a blip nobody noticed is
+   * not worth a warning. Edits keep saving either way — only the news stops.
+   */
+  offline: boolean;
 
   load: (token: string) => Promise<void>;
-  run: (work: () => Promise<Album>, undo?: UndoEntry) => Promise<void>;
+  accept: (update: AlbumUpdate) => void;
+  resync: () => Promise<void>;
+  run: (work: () => Promise<AlbumUpdate>, undo?: UndoEntry) => Promise<void>;
   showToast: (message: string) => void;
   undoLast: () => Promise<void>;
 
@@ -50,25 +69,59 @@ let toastTimer: ReturnType<typeof setTimeout> | undefined;
 export const useStore = create<State>((set, get) => ({
   token: null,
   album: null,
+  rev: 0,
   status: 'idle',
   error: null,
   undo: null,
   toast: null,
+  peers: [],
+  socketId: null,
+  offline: false,
 
+  /** A different album entirely: nothing from the last one carries over. */
   async load(token) {
-    set({ token, status: 'loading', error: null });
+    set({ token, album: null, rev: 0, peers: [], undo: null, status: 'loading', error: null });
     try {
-      set({ album: await api.getAlbum(token), status: 'idle' });
+      const update = await api.getAlbum(token);
+      set({ album: update.album, rev: update.rev, status: 'idle' });
     } catch (error) {
       set({ status: 'error', error: (error as Error).message });
+    }
+  },
+
+  /**
+   * The one way an album gets into this store, whether it came back from a
+   * request of ours or was pushed here because another child changed something.
+   *
+   * A reading older than the one already on screen is thrown away. Without that
+   * the two arrival routes race: our own answer, held up for a moment, would
+   * otherwise land on top of a change that happened after it and quietly undo
+   * it on this screen alone.
+   */
+  accept(update) {
+    if (update.rev < get().rev) return;
+    set({ album: update.album, rev: update.rev });
+  },
+
+  /**
+   * Fetch the album outright. Used after a gap in the connection, when what we
+   * missed is unknown and asking is cheaper than working it out.
+   */
+  async resync() {
+    const token = get().token;
+    if (!token) return;
+    try {
+      get().accept(await api.getAlbum(token));
+    } catch {
+      // The next reconnect, or the child's next edit, will try again.
     }
   },
 
   async run(work, undo) {
     set({ status: 'saving', error: null });
     try {
-      const album = await work();
-      set({ album, status: 'saved', undo: undo ?? get().undo });
+      get().accept(await work());
+      set({ status: 'saved', undo: undo ?? get().undo });
       clearTimeout(savedTimer);
       savedTimer = setTimeout(() => {
         if (get().status === 'saved') set({ status: 'idle' });

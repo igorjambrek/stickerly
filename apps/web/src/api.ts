@@ -1,5 +1,21 @@
-import type { Album, AlbumSize, Crop, Lang, Person } from '@album/shared';
+import type { Album, AlbumSize, AlbumUpdate, Crop, Features, Lang, Person, PictureSearch } from '@album/shared';
+import { SOCKET_HEADER } from '@album/shared';
 import { readDeviceKey } from './deviceKey.ts';
+
+/**
+ * The live socket this editor is listening on, once it has one.
+ *
+ * Sent with every mutation so the hub can leave us out of the broadcast it
+ * causes: we are about to be handed the same album as the answer to this very
+ * request, and hearing it twice is how an editor ends up applying its own edit
+ * out of order. Kept here rather than in the store because this is the one
+ * place that speaks to the server, and `live.ts` sets it the moment it knows.
+ */
+let socketId: string | null = null;
+
+export const setSocketId = (id: string | null): void => {
+  socketId = id;
+};
 
 export interface PrintSummary {
   stickerCount: number;
@@ -38,6 +54,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     headers: {
       ...init?.headers,
       ...(deviceKey ? { 'x-nalepko-device': deviceKey } : {}),
+      ...(socketId ? { [SOCKET_HEADER]: socketId } : {}),
     },
   });
   if (!res.ok) {
@@ -53,8 +70,12 @@ const jsonBody = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-/** Every mutation returns the whole album, so the editor never merges partial state. */
-type AlbumResponse = { album: Album };
+/**
+ * Every mutation returns the whole album, so the editor never merges partial
+ * state — and the revision it was read at, so an answer that overtakes a newer
+ * one on the way back can be recognised as stale and dropped.
+ */
+type AlbumResponse = AlbumUpdate;
 
 const albumBase = (token: string) => `/api/albums/${encodeURIComponent(token)}`;
 
@@ -104,30 +125,29 @@ export const api = {
   createAlbum: (input: CreateAlbumInput) =>
     request<{ id: string; editToken: string; album: Album }>('/api/albums', jsonBody('POST', input)),
 
-  getAlbum: (token: string) => request<AlbumResponse>(albumBase(token)).then((r) => r.album),
+  getAlbum: (token: string) => request<AlbumResponse>(albumBase(token)),
 
   updateAlbum: (token: string, patch: { title?: string; ownerName?: string; lang?: Lang }) =>
-    request<AlbumResponse>(albumBase(token), jsonBody('PATCH', patch)).then((r) => r.album),
+    request<AlbumResponse>(albumBase(token), jsonBody('PATCH', patch)),
 
   deleteAlbum: (token: string) => request<{ ok: true }>(albumBase(token), { method: 'DELETE' }).then(() => undefined),
 
   setCover: (token: string, patch: CoverPatch) =>
-    request<AlbumResponse>(`${albumBase(token)}/cover`, jsonBody('PUT', patch)).then((r) => r.album),
+    request<AlbumResponse>(`${albumBase(token)}/cover`, jsonBody('PUT', patch)),
 
-  addPage: (token: string) =>
-    request<AlbumResponse>(`${albumBase(token)}/pages`, { method: 'POST' }).then((r) => r.album),
+  addPage: (token: string) => request<AlbumResponse>(`${albumBase(token)}/pages`, { method: 'POST' }),
 
   deletePage: (token: string, pageId: string) =>
-    request<AlbumResponse>(`${albumBase(token)}/pages/${pageId}`, { method: 'DELETE' }).then((r) => r.album),
+    request<AlbumResponse>(`${albumBase(token)}/pages/${pageId}`, { method: 'DELETE' }),
 
   updatePage: (token: string, pageId: string, patch: { title?: string; position?: number }) =>
-    request<AlbumResponse>(`${albumBase(token)}/pages/${pageId}`, jsonBody('PATCH', patch)).then((r) => r.album),
+    request<AlbumResponse>(`${albumBase(token)}/pages/${pageId}`, jsonBody('PATCH', patch)),
 
   setSlot: (token: string, slotId: string, patch: { label?: string; imageId?: string | null; crop?: Crop }) =>
-    request<AlbumResponse>(`${albumBase(token)}/slots/${slotId}`, jsonBody('PUT', patch)).then((r) => r.album),
+    request<AlbumResponse>(`${albumBase(token)}/slots/${slotId}`, jsonBody('PUT', patch)),
 
   swapSlots: (token: string, slotId: string, withId: string) =>
-    request<AlbumResponse>(`${albumBase(token)}/slots/${slotId}/swap`, jsonBody('POST', { withId })).then((r) => r.album),
+    request<AlbumResponse>(`${albumBase(token)}/slots/${slotId}/swap`, jsonBody('POST', { withId })),
 
   /** `role` decides how big a derivative is kept: a cover fills a whole page. */
   async uploadImage(token: string, file: File, role: 'sticker' | 'cover' = 'sticker'): Promise<{ id: string; w: number; h: number }> {
@@ -142,6 +162,28 @@ export const api = {
 
   imageUrl: (token: string, imageId: string, size?: 'thumb') =>
     `${albumBase(token)}/images/${imageId}${size ? `?size=${size}` : ''}`,
+
+  /** What this deployment can do. Asked once; picture search may be switched off. */
+  features: () => request<Features>('/api/features'),
+
+  /** Pictures to choose from, for a child who has none of their own to hand. */
+  searchPictures: (token: string, query: string, lang: Lang) =>
+    request<PictureSearch>(
+      `${albumBase(token)}/pictures?q=${encodeURIComponent(query)}&lang=${encodeURIComponent(lang)}`,
+    ),
+
+  /**
+   * Take one of those into the album. `pick` is the opaque handle the search
+   * came back with — the address it stands for is the server's business, and
+   * saying it out loud here is what would turn this into an open proxy.
+   */
+  async addPicture(token: string, pick: string, role: 'sticker' | 'cover' = 'sticker') {
+    const res = await request<{ image: { id: string; w: number; h: number } }>(
+      `${albumBase(token)}/images/from-search${role === 'cover' ? '?role=cover' : ''}`,
+      jsonBody('POST', { pick }),
+    );
+    return res.image;
+  },
 
   printSummary: (token: string) => request<PrintSummary>(`${albumBase(token)}/print/summary`),
 
@@ -168,7 +210,7 @@ export const api = {
   createInvite: (token: string) => request<MintedCode>(`${albumBase(token)}/invites`, { method: 'POST' }),
 
   claimInvite: (code: string) =>
-    request<{ album: Album; editToken: string }>(`/api/invites/${encodeURIComponent(code)}/claim`, {
+    request<AlbumUpdate & { editToken: string }>(`/api/invites/${encodeURIComponent(code)}/claim`, {
       method: 'POST',
     }),
 };
