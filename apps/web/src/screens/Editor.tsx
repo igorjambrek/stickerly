@@ -449,14 +449,18 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
             onScroll={onStageScroll}
           >
             {/* Keyed by the spread: a turn hands the browser a new element, so the
-                animation runs again even when the child turns the same way twice. */}
+                animation runs again even when the child turns the same way twice.
+                The blank sheet is what the leaf comes off and what the uncovered
+                page comes out from under; it is paper, and it has no meaning. */}
             <div className="spread__half">
+              <div className="spread__under" key={`u${spread.index}`} aria-hidden="true" />
               <div className="spread__leaf" key={spread.index} data-leaf={leafRole('left')}>
                 {half(spread.left, 'left')}
               </div>
             </div>
             <span className="spread__spine" aria-hidden="true" />
             <div className="spread__half">
+              <div className="spread__under" key={`u${spread.index}`} aria-hidden="true" />
               <div className="spread__leaf" key={spread.index} data-leaf={leafRole('right')}>
                 {half(spread.right, 'right')}
               </div>
