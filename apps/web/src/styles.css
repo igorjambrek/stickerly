@@ -1,0 +1,1419 @@
+/*
+ * The same four TrueType files the PDF embeds, so a title that fits on screen
+ * fits on paper.
+ */
+@font-face {
+  font-family: 'Nunito';
+  src: url('../../../assets/fonts/Nunito-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Nunito';
+  src: url('../../../assets/fonts/Nunito-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Comfortaa';
+  src: url('../../../assets/fonts/Comfortaa-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Comfortaa';
+  src: url('../../../assets/fonts/Comfortaa-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-display: swap;
+}
+
+:root {
+  /* Overridden per album from the chosen template's palette. */
+  --accent: #3a86ff;
+  --accent-ink: #ffffff;
+  --ink: #1f2733;
+  --muted: #6b7787;
+  --paper: #ffffff;
+  --ground: #f2f5fa;
+  --line: #dde3ec;
+  --radius: 18px;
+  --shadow: 0 2px 4px rgba(24, 36, 56, 0.06), 0 12px 28px rgba(24, 36, 56, 0.09);
+  --danger: #d94848;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 17px;
+  color: var(--ink);
+  background: var(--ground);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: 'Comfortaa', 'Nunito', system-ui, sans-serif;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.15;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: 0;
+  background: none;
+  color: inherit;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+}
+
+/* --- Buttons: large, obvious, and hard to miss with a small hand ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 24px;
+  border-radius: 999px;
+  font-weight: 700;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.btn--big {
+  min-height: 64px;
+  font-size: 20px;
+  padding: 0 34px;
+}
+.btn--ghost {
+  box-shadow: none;
+  background: transparent;
+  color: var(--muted);
+  min-height: 44px;
+  padding: 0 14px;
+}
+.btn--ghost:hover {
+  color: var(--ink);
+  background: rgba(0, 0, 0, 0.05);
+}
+.btn--danger {
+  color: var(--danger);
+}
+
+.field {
+  display: block;
+  width: 100%;
+  min-height: 54px;
+  padding: 0 18px;
+  border-radius: 14px;
+  border: 2px solid var(--line);
+  background: var(--paper);
+  outline: none;
+}
+.field:focus {
+  border-color: var(--accent);
+}
+.field[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+label.label {
+  display: block;
+  font-weight: 700;
+  font-size: 15px;
+  margin: 0 0 8px 2px;
+  color: var(--muted);
+}
+
+/* --- App shell ----------------------------------------------------------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 20px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+/*
+ * Nothing in the bar shrinks under its own text: the counters and buttons say
+ * what they say in four languages, so a bar that runs out of room wraps to a
+ * second row instead of letting one label slide under the next.
+ */
+.topbar > * {
+  flex: none;
+}
+
+/* The actions keep to the right, and travel together to a row of their own. */
+.topbar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-left: auto;
+}
+.topbar__actions > * {
+  flex: none;
+}
+
+.topbar__title {
+  flex: 0 1 auto;
+  font-family: 'Comfortaa', sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 6px 10px;
+  min-width: 120px;
+  max-width: 340px;
+  background: transparent;
+}
+.topbar__title:hover {
+  border-color: var(--line);
+}
+.topbar__title:focus {
+  border-color: var(--accent);
+  outline: none;
+  background: var(--paper);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.status {
+  font-size: 14px;
+  color: var(--muted);
+  min-width: 84px;
+  white-space: nowrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Comfortaa', sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--ink);
+}
+.brand__mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 20px;
+}
+
+/* --- Home ---------------------------------------------------------------- */
+
+.home {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 28px 20px 80px;
+}
+
+.home__hero {
+  text-align: center;
+  padding: 24px 0 32px;
+}
+.home__hero h1 {
+  font-size: clamp(28px, 4vw, 44px);
+}
+.home__hero p {
+  color: var(--muted);
+  font-size: 19px;
+  margin: 12px 0 0;
+}
+
+.group__name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--muted);
+  margin: 28px 0 12px 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Three across: both groups hold exactly three themes, so no row is half empty. */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 560px) {
+  .template-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.template-card {
+  display: block;
+  padding: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  border: 3px solid transparent;
+  transition: transform 0.14s ease, border-color 0.14s ease;
+  text-align: center;
+}
+.template-card:hover {
+  transform: translateY(-4px);
+}
+.template-card[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.template-card__art {
+  display: block;
+  width: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+.template-card__name {
+  display: block;
+  padding: 12px 8px 14px;
+  font-weight: 700;
+  font-family: 'Comfortaa', sans-serif;
+}
+
+.panel {
+  background: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.form-row {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 2fr 1fr;
+}
+@media (max-width: 640px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.recent {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  margin-bottom: 32px;
+}
+.recent__item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  text-decoration: none;
+  color: inherit;
+}
+
+/* --- Editor -------------------------------------------------------------- */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.editor__stage {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  /* Not stretch: the page must keep the aspect ratio of the paper it prints on. */
+  align-items: flex-start;
+  padding: 26px 20px 10px;
+}
+
+/* An open album: the two facing pages, joined at the spine. */
+.spread {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  max-width: 100%;
+}
+
+/* Two pages share the room one page used to have, and must still fit vertically. */
+.spread .page-sheet {
+  width: min(420px, 43vw, 50vh);
+}
+/* Square off the inner corners: the halves are one book, not two cards. */
+.spread > .page-sheet:first-child {
+  border-radius: 8px 2px 2px 8px;
+}
+.spread > .page-sheet:last-child {
+  border-radius: 2px 8px 8px 2px;
+}
+
+.spread__spine {
+  align-self: stretch;
+  width: 12px;
+  background: linear-gradient(
+    to right,
+    rgba(20, 30, 50, 0.2),
+    rgba(20, 30, 50, 0.05) 42%,
+    rgba(20, 30, 50, 0.05) 58%,
+    rgba(20, 30, 50, 0.2)
+  );
+}
+
+/* Which of the two pages the strip is on, and page actions will act on. */
+.page-sheet--active {
+  box-shadow: 0 4px 10px rgba(20, 30, 50, 0.1), 0 24px 60px rgba(20, 30, 50, 0.16),
+    0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* The cover panel facing page 1 (and the last page): printed, never edited. */
+.inside-note {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: 9%;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.inside-note strong {
+  font-family: 'Comfortaa', sans-serif;
+  font-size: 15px;
+}
+
+/* What the child is looking at, said in words under it. */
+.spread-note {
+  margin: 0;
+  padding: 0 20px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+.spread-note strong {
+  color: var(--ink);
+}
+
+/* A phone cannot show two pages side by side and keep a slot tappable. */
+@media (max-width: 760px) {
+  .spread {
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .spread .page-sheet,
+  .spread > .page-sheet:first-child,
+  .spread > .page-sheet:last-child {
+    width: min(420px, 88vw);
+    border-radius: 8px;
+  }
+  .spread__spine {
+    display: none;
+  }
+}
+
+.page-sheet {
+  position: relative;
+  container-type: inline-size;
+  width: min(560px, 92vw);
+  aspect-ratio: 210 / 297;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 10px rgba(20, 30, 50, 0.1), 0 24px 60px rgba(20, 30, 50, 0.16);
+  background: var(--paper);
+  user-select: none;
+}
+
+.page-sheet__art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.page-sheet__heading {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Comfortaa', sans-serif;
+  font-weight: 700;
+  text-align: center;
+  border: 2px dashed transparent;
+  border-radius: 8px;
+  background: transparent;
+  width: 100%;
+  padding: 0;
+}
+.page-sheet__heading:hover {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+.page-sheet__heading:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.slot {
+  position: absolute;
+  border-radius: 3.2%;
+  padding: 0;
+  overflow: visible;
+  transition: transform 0.12s ease;
+}
+.slot:hover {
+  transform: scale(1.03);
+  z-index: 3;
+}
+.slot--dragging {
+  opacity: 0.35;
+}
+.slot--over .slot__frame {
+  border-style: solid;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.slot__frame {
+  position: absolute;
+  inset: 0;
+  border: 2px dashed currentColor;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.slot__photo {
+  position: absolute;
+  max-width: none;
+}
+
+.slot__plus {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  opacity: 0.4;
+}
+
+.slot__badge {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  border: 2px solid #fff;
+  z-index: 2;
+}
+
+.slot__label {
+  position: absolute;
+  text-align: center;
+  width: 100%;
+  font-weight: 700;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pagestrip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 20px 26px;
+}
+
+/* One group per spread: the strip says which pages are seen together. */
+.pagepair {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 18px;
+  border: 2px solid transparent;
+}
+.pagepair[data-current='true'] {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.pagechip {
+  min-width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  border: 3px solid transparent;
+}
+.pagechip[aria-current='true'] {
+  border-color: var(--accent);
+}
+
+/* --- Dialogs ------------------------------------------------------------- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(18, 26, 40, 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.dialog {
+  width: min(560px, 100%);
+  max-height: 92vh;
+  overflow: auto;
+  background: var(--paper);
+  border-radius: 24px;
+  padding: 26px;
+  box-shadow: 0 30px 80px rgba(10, 18, 32, 0.35);
+}
+.dialog--wide {
+  width: min(720px, 100%);
+}
+/* Wide enough for a theme's whole run of covers to sit on one row. */
+.dialog--cover {
+  width: min(880px, 100%);
+}
+
+.dialog__title {
+  font-size: 26px;
+  margin-bottom: 6px;
+}
+
+.dropzone {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  aspect-ratio: 50 / 70;
+  width: 220px;
+  margin: 0 auto;
+  border: 3px dashed var(--line);
+  border-radius: 16px;
+  color: var(--muted);
+  text-align: center;
+  padding: 16px;
+}
+.dropzone--over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--ink);
+}
+
+.framer {
+  position: relative;
+  width: 220px;
+  aspect-ratio: 50 / 70;
+  margin: 0 auto;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #eef1f6;
+  cursor: grab;
+  touch-action: none;
+}
+.framer:active {
+  cursor: grabbing;
+}
+.framer img {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+}
+
+.slider {
+  width: 100%;
+  accent-color: var(--accent);
+  height: 40px;
+}
+
+.print-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 2px solid var(--line);
+  margin-bottom: 12px;
+}
+.print-row__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+.print-row__hint {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/*
+ * Which paper goes in the printer is the thing a copy shop gets wrong, so each
+ * download says it in colour rather than in a footnote. Three papers, three
+ * colours: card, page, sticker.
+ */
+.paper-chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 2px solid;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.paper-chip--card {
+  background: #fbe9d2;
+  border-color: #eec89a;
+  color: #7c4a12;
+}
+.paper-chip--text {
+  background: #e4edff;
+  border-color: #bcd2f8;
+  color: #204a8c;
+}
+.paper-chip--sticky {
+  background: #e2f6e7;
+  border-color: #b4e5c2;
+  color: #1d6835;
+}
+
+.print-section {
+  margin-top: 22px;
+  font-size: 19px;
+}
+
+.print-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+/* These two labels are whole sentences in Serbian; let them wrap. */
+.print-actions .btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 12px 20px;
+  white-space: normal;
+}
+
+/* --- The sheet you show at the copy shop --------------------------------- */
+
+/*
+ * Its own page, read at arm's length on a phone at a counter: one column, big
+ * type, and the two settings that ruin a print run stated before anything a
+ * person has to scroll for.
+ */
+.notice {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 16px 16px 72px;
+}
+.notice__bar {
+  display: flex;
+  margin-bottom: 8px;
+}
+.notice__title {
+  font-size: clamp(26px, 6vw, 34px);
+}
+.notice__lead {
+  margin: 10px 0 0;
+  font-size: 18px;
+  color: var(--muted);
+}
+.notice__album {
+  margin: 14px 0 0;
+  font-size: 16px;
+}
+.notice__rule {
+  margin: 18px 0 0;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  border: 3px solid var(--accent);
+  background: var(--paper);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.notice__section {
+  margin: 28px 0 12px;
+  font-size: 20px;
+}
+.notice__body {
+  margin: 0 0 12px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* One thumb-width column once a phone runs out of room for a row. */
+@media (max-width: 520px) {
+  .print-row {
+    flex-wrap: wrap;
+  }
+  .print-row .btn {
+    width: 100%;
+  }
+}
+
+/* The note for the print shop, shown exactly as it will be pasted. */
+.shop-note {
+  margin: 10px 0 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 2px dashed var(--line);
+  background: var(--ground);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.steps {
+  counter-reset: step;
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: grid;
+  gap: 12px;
+}
+.steps li {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 12px;
+  align-items: start;
+  font-size: 15px;
+  line-height: 1.45;
+}
+.steps li::before {
+  counter-increment: step;
+  content: counter(step);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 90;
+  background: #1f2733;
+  color: #fff;
+  padding: 14px 22px;
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+  font-weight: 700;
+}
+
+.center-note {
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+  gap: 16px;
+  color: var(--muted);
+  text-align: center;
+  padding: 20px;
+}
+
+.langswitch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--ground);
+}
+.langswitch button {
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.langswitch button[aria-pressed='true'] {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+/* --- Making an album: steps, choices, and a live cover -------------------- */
+
+.home__bar {
+  display: flex;
+  align-items: center;
+}
+
+.home__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 24px;
+  align-items: start;
+}
+.home__steps {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+/* The cover follows the child down the page: every choice changes it. */
+.home__preview {
+  position: sticky;
+  top: 20px;
+}
+@media (max-width: 980px) {
+  .home__layout {
+    grid-template-columns: 1fr;
+  }
+  .home__preview {
+    position: static;
+    max-width: 340px;
+    margin: 0 auto;
+  }
+}
+
+.preview {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+.preview__facts {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+}
+.preview .btn {
+  width: 100%;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.step__n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: 'Comfortaa', sans-serif;
+  font-weight: 700;
+  font-size: 19px;
+}
+.step__text strong {
+  display: block;
+  font-family: 'Comfortaa', sans-serif;
+  font-size: 19px;
+}
+.step__text span {
+  display: block;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.hint {
+  margin: 10px 2px 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* --- The cover, on screen ------------------------------------------------ */
+
+.cover-sheet {
+  position: relative;
+  container-type: inline-size;
+  aspect-ratio: 210 / 297;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--paper);
+  box-shadow: 0 3px 8px rgba(20, 30, 50, 0.12), 0 18px 44px rgba(20, 30, 50, 0.18);
+  user-select: none;
+}
+
+.cover-sheet__art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.cover-sheet__photo {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+}
+
+/* Matches the scrim the PDF prints, so a bright photo cannot swallow the title. */
+.cover-sheet__scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.1) 62%, rgba(0, 0, 0, 0.36) 100%);
+}
+.cover-sheet__edge {
+  position: absolute;
+  border-style: solid;
+  border-radius: 3px;
+}
+
+.cover-sheet__plaque {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2%;
+  text-align: center;
+  border-style: solid;
+  overflow: hidden;
+}
+.cover-sheet__kicker {
+  font-weight: 700;
+  opacity: 0.72;
+  white-space: nowrap;
+}
+.cover-sheet__title {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-family: 'Comfortaa', sans-serif;
+  font-weight: 700;
+  line-height: 1.12;
+  word-break: break-word;
+}
+.cover-sheet__rule {
+  display: block;
+  border-radius: 99px;
+}
+.cover-sheet__owner {
+  font-family: 'Comfortaa', sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+.cover-sheet__pill {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  color: #1f2430;
+  white-space: nowrap;
+}
+
+/* --- Choosing a cover ---------------------------------------------------- */
+
+.coverpicker__row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 12px;
+}
+
+.coverchip {
+  padding: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  border: 3px solid transparent;
+  text-align: center;
+  transition: transform 0.14s ease, border-color 0.14s ease;
+}
+.coverchip:hover {
+  transform: translateY(-3px);
+}
+.coverchip[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.coverchip__art {
+  border-radius: 0;
+  box-shadow: none;
+}
+.coverchip__name {
+  display: block;
+  padding: 8px 6px 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.coverdrop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.coverdrop__zone {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 2px dashed var(--line);
+  border-radius: 16px;
+  cursor: pointer;
+}
+.coverdrop__zone:hover,
+.coverdrop--over .coverdrop__zone {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.coverdrop__icon {
+  font-size: 26px;
+}
+.coverdrop__text strong {
+  display: block;
+}
+.coverdrop__text span {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.coverdialog {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 22px;
+  align-items: start;
+}
+@media (max-width: 700px) {
+  .coverdialog {
+    grid-template-columns: 1fr;
+  }
+}
+.coverdialog__preview {
+  display: grid;
+  gap: 6px;
+  touch-action: none;
+}
+.coverdialog__preview .hint {
+  text-align: center;
+  margin-top: 0;
+}
+
+/* --- How big, and how many ----------------------------------------------- */
+
+.sizegrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.sizecard {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  border: 3px solid transparent;
+  text-align: center;
+  transition: transform 0.14s ease, border-color 0.14s ease;
+}
+.sizecard:hover {
+  transform: translateY(-3px);
+}
+.sizecard[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+/* Both pages are drawn at true relative scale: this is a physical choice. */
+.sizecard__paper {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 96px;
+}
+.sizecard__page {
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 2px solid var(--line);
+  background: linear-gradient(160deg, #ffffff, #eaeff7);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.sizecard__hint {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pergrid {
+  display: grid;
+  /* Wide enough for the two pages each card draws. */
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 12px;
+}
+.percard {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  border: 3px solid transparent;
+  font-size: 14px;
+  font-weight: 700;
+  transition: transform 0.14s ease, border-color 0.14s ease;
+}
+.percard:hover {
+  transform: translateY(-3px);
+}
+.percard[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.percard__open {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.gridglyph {
+  width: 104px;
+  height: auto;
+}
+.gridglyph__page {
+  fill: #ffffff;
+  stroke: var(--line);
+  stroke-width: 2;
+}
+.gridglyph__bar {
+  fill: var(--line);
+}
+.gridglyph__slot {
+  fill: color-mix(in srgb, var(--accent) 20%, #ffffff);
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-dasharray: 7 5;
+}
+
+
+/* --- Passport ------------------------------------------------------------ */
+
+.passport {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 20px 48px;
+}
+
+.passport__title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0 20px;
+}
+.passport__face {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.passport__card {
+  background: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin-bottom: 18px;
+}
+.passport__card h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+.passport__card h3 {
+  margin: 20px 0 8px;
+  font-size: 15px;
+}
+
+.passport__hint {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 10px 0 0;
+}
+.passport__error {
+  color: var(--danger);
+  font-weight: 700;
+  margin: 10px 0 0;
+}
+
+.passport__namerow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.passport__namerow .field {
+  flex: 1;
+}
+
+/*
+ * The code, big enough to read off a tablet propped against something. Tabular
+ * figures so it does not shuffle sideways while a countdown ticks beside it,
+ * and a monospace stack because a child is copying it character by character.
+ */
+.passport__code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: clamp(28px, 7vw, 40px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-align: center;
+  margin: 6px 0 0;
+}
+.passport__codeinput {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* White quiet zone regardless of the page behind it, or a camera may not read it. */
+.passport__qr {
+  width: min(260px, 70vw);
+  margin: 16px auto 0;
+  padding: 10px;
+  background: #ffffff;
+  border-radius: 14px;
+}
+.passport__qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.passport__avatars {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 8px;
+}
+.passport__avatar {
+  aspect-ratio: 1;
+  font-size: 28px;
+  border-radius: 14px;
+  border: 2px solid var(--line);
+  background: var(--paper);
+  cursor: pointer;
+}
+.passport__avatar[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, #ffffff);
+}
+
+.passport__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* --- Members ------------------------------------------------------------- */
+
+.members {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.members__one {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 4px;
+  border-radius: 999px;
+  background: var(--ground);
+  font-size: 14px;
+  font-weight: 700;
+}
+.members__face {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 15px;
+}
+
+/*
+ * Who put a sticker here. Editor chrome only — it has no counterpart in the
+ * PDF, so it must never take space the printed geometry has spoken for.
+ */
+.slot__who {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(24, 36, 56, 0.25);
+  z-index: 2;
+}

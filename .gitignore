@@ -1,0 +1,8 @@
+node_modules/
+dist/
+tmp/
+data/
+*.local
+.env
+.DS_Store
+.claude/scheduled_tasks.lock

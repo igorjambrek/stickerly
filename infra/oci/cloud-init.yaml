@@ -1,0 +1,51 @@
+#cloud-config
+# Prepares a bare Ubuntu box to run docker-compose.yml from the repo root.
+# Nothing app-specific is baked in here: deploy.sh copies the source up and
+# builds it, so a redeploy never needs the instance rebuilt.
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - rsync
+
+write_files:
+  # Unattended security updates, because nobody is going to log in and patch
+  # a box that just quietly works.
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+runcmd:
+  # --- Docker, from Docker's own repository -------------------------------
+  # Ubuntu's docker.io package is usable but lags, and we need the compose and
+  # buildx plugins that this repository ships alongside the engine.
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+  - usermod -aG docker ubuntu
+
+  # --- Host firewall ------------------------------------------------------
+  # Oracle's Ubuntu image ships an iptables ruleset that accepts 22 and rejects
+  # the rest, so 80 and 443 have to be opened here as well as in the VCN's
+  # security list. Saved so the rules survive a reboot.
+  - iptables -I INPUT 1 -p tcp --dport 80 -j ACCEPT
+  - iptables -I INPUT 1 -p tcp --dport 443 -j ACCEPT
+  - netfilter-persistent save
+
+  # --- Where the app lives -------------------------------------------------
+  - mkdir -p /opt/nalepko
+  - chown ubuntu:ubuntu /opt/nalepko
+
+  # A marker deploy.sh waits for, so a deploy cannot start against a box that
+  # is still installing Docker.
+  - touch /var/lib/cloud/nalepko-ready

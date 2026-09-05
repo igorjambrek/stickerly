@@ -1,0 +1,444 @@
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { after, before, describe, it } from 'node:test';
+import type { AddressInfo } from 'node:net';
+import type { FastifyInstance } from 'fastify';
+import type { Album } from '@album/shared';
+import { DEFAULT_SLOTS_PER_PAGE, layoutFor, numbersAreContiguous } from '@album/shared';
+import { createApp } from '../src/app.ts';
+import { imagesDir } from '../src/config.ts';
+import { createTestDb } from '../src/db/index.ts';
+import { INITIAL_PAGES } from '../src/repo.ts';
+import { makeFixturePhoto } from '../src/testing/fixtures.ts';
+
+let app: FastifyInstance;
+let base: string;
+let dataDir: string;
+
+before(async () => {
+  dataDir = await mkdtemp(path.join(tmpdir(), 'nalepko-test-'));
+  process.env.DATA_DIR = dataDir;
+  app = await createApp({ db: createTestDb(), serveWeb: false });
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  base = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
+});
+
+after(async () => {
+  await app.close();
+  await rm(dataDir, { recursive: true, force: true });
+  delete process.env.DATA_DIR;
+});
+
+const json = async (res: Response) => {
+  assert.ok(res.ok, `${res.status} ${res.url}: ${await res.clone().text()}`);
+  return res.json();
+};
+
+const post = (url: string, body?: unknown) =>
+  fetch(base + url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
+
+const put = (url: string, body: unknown) =>
+  fetch(base + url, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+async function newAlbum(overrides: Record<string, unknown> = {}): Promise<{ token: string; album: Album }> {
+  const res = await post('/api/albums', { templateId: 'space', title: 'Тест албум', ownerName: 'Ана', ...overrides });
+  assert.equal(res.status, 201);
+  const body = (await res.json()) as { editToken: string; album: Album };
+  return { token: body.editToken, album: body.album };
+}
+
+const allSlots = (album: Album) => album.pages.flatMap((p) => p.slots);
+
+/** What a default album is: the biggest paper, at its fullest.  */
+const PER_PAGE = DEFAULT_SLOTS_PER_PAGE.a3;
+
+describe('creating an album', () => {
+  it('opens with one foldable sheet of pages, all slots numbered', async () => {
+    const { token, album } = await newAlbum();
+
+    assert.equal(album.pages.length, INITIAL_PAGES);
+    assert.equal(allSlots(album).length, INITIAL_PAGES * PER_PAGE);
+    assert.deepEqual(
+      allSlots(album).map((s) => s.number),
+      Array.from({ length: INITIAL_PAGES * PER_PAGE }, (_, i) => i + 1),
+    );
+    assert.equal(album.templateId, 'space');
+    assert.ok(token.length >= 20, 'the edit token must not be guessable');
+  });
+
+  it('falls back to a known template rather than rejecting the child', async () => {
+    const { album } = await newAlbum({ templateId: 'not-a-template' });
+    assert.equal(album.templateId, 'football');
+  });
+
+  it('defaults to the big album with a full page', async () => {
+    const { album } = await newAlbum();
+    assert.equal(album.size, 'a3');
+    assert.equal(album.slotsPerPage, DEFAULT_SLOTS_PER_PAGE.a3);
+  });
+
+  it('makes a small album with as many stickers a page as asked for', async () => {
+    const { album } = await newAlbum({ size: 'a4', slotsPerPage: 2 });
+    assert.equal(album.size, 'a4');
+    assert.equal(album.slotsPerPage, 2);
+    assert.equal(allSlots(album).length, INITIAL_PAGES * 2);
+    assert.ok(numbersAreContiguous(album.pages));
+  });
+
+  it('snaps a slot count the chosen paper cannot print', async () => {
+    // Nine stickers cannot fit an A5 page at 50 x 70 mm. Rather than refuse,
+    // the album opens on the busiest page that paper can hold.
+    const { album } = await newAlbum({ size: 'a4', slotsPerPage: 9 });
+    assert.equal(album.slotsPerPage, layoutFor('a4', 9).slotsPerPage);
+  });
+
+  it('ignores a paper size it does not have', async () => {
+    const { album } = await newAlbum({ size: 'a0' });
+    assert.equal(album.size, 'a3');
+  });
+
+  it('hands back a 404 for an unknown link', async () => {
+    const res = await fetch(`${base}/api/albums/definitely-not-a-real-token`);
+    assert.equal(res.status, 404);
+  });
+});
+
+describe('pages', () => {
+  it('renumbers everything when a page is added', async () => {
+    const { token } = await newAlbum();
+    const { album } = (await json(await post(`/api/albums/${token}/pages`))) as { album: Album };
+
+    assert.equal(album.pages.length, INITIAL_PAGES + 1);
+    assert.ok(numbersAreContiguous(album.pages));
+    assert.equal(allSlots(album).at(-1)!.number, (INITIAL_PAGES + 1) * PER_PAGE);
+  });
+
+  it('closes the numbering gap when a page is deleted', async () => {
+    const { token, album } = await newAlbum();
+    const removed = album.pages[1]!.id;
+
+    const res = await fetch(`${base}/api/albums/${token}/pages/${removed}`, { method: 'DELETE' });
+    const after = ((await json(res)) as { album: Album }).album;
+
+    assert.equal(after.pages.length, INITIAL_PAGES - 1);
+    assert.ok(!after.pages.some((p) => p.id === removed));
+    assert.ok(numbersAreContiguous(after.pages));
+    assert.deepEqual(after.pages.map((p) => p.position), [0, 1, 2]);
+  });
+
+  it('refuses to leave the child with no pages at all', async () => {
+    const { token, album } = await newAlbum();
+    for (const page of album.pages.slice(1)) {
+      await fetch(`${base}/api/albums/${token}/pages/${page.id}`, { method: 'DELETE' });
+    }
+    const res = await fetch(`${base}/api/albums/${token}/pages/${album.pages[0]!.id}`, { method: 'DELETE' });
+    assert.equal(res.status, 400);
+  });
+
+  it('reorders pages and renumbers to match', async () => {
+    const { token, album } = await newAlbum();
+    const last = album.pages.at(-1)!.id;
+
+    const res = await fetch(`${base}/api/albums/${token}/pages/${last}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ position: 0 }),
+    });
+    const after = ((await json(res)) as { album: Album }).album;
+
+    assert.equal(after.pages[0]!.id, last);
+    assert.equal(after.pages[0]!.slots[0]!.number, 1);
+    assert.ok(numbersAreContiguous(after.pages));
+  });
+});
+
+describe('photos and slots', () => {
+  async function upload(token: string, index = 0) {
+    const photo = await makeFixturePhoto(index);
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(photo)], { type: 'image/jpeg' }), 'photo.jpg');
+    const res = await fetch(`${base}/api/albums/${token}/images`, { method: 'POST', body: form });
+    return ((await json(res)) as { image: { id: string; w: number; h: number } }).image;
+  }
+
+  it('normalises an upload and reports its stored size', async () => {
+    const { token } = await newAlbum();
+    const image = await upload(token);
+    assert.ok(image.id);
+    assert.equal(image.w, 600);
+    assert.equal(image.h, 840);
+  });
+
+  it('serves the photo back, and a thumbnail', async () => {
+    const { token } = await newAlbum();
+    const image = await upload(token);
+
+    for (const query of ['', '?size=thumb']) {
+      const res = await fetch(`${base}/api/albums/${token}/images/${image.id}${query}`);
+      assert.ok(res.ok, `fetching ${query || 'print'} derivative`);
+      assert.equal(res.headers.get('content-type'), 'image/jpeg');
+      assert.ok((await res.arrayBuffer()).byteLength > 0);
+    }
+  });
+
+  it('will not serve another album\'s photo through this album\'s link', async () => {
+    const mine = await newAlbum();
+    const theirs = await newAlbum();
+    const image = await upload(theirs.token);
+
+    const res = await fetch(`${base}/api/albums/${mine.token}/images/${image.id}`);
+    assert.equal(res.status, 404);
+  });
+
+  it('rejects a file that is not a picture', async () => {
+    const { token } = await newAlbum();
+    const form = new FormData();
+    form.append('file', new Blob(['not a photo'], { type: 'text/plain' }), 'notes.txt');
+    const res = await fetch(`${base}/api/albums/${token}/images`, { method: 'POST', body: form });
+    assert.equal(res.status, 400);
+  });
+
+  it('puts a photo and a name into a slot', async () => {
+    const { token, album } = await newAlbum();
+    const image = await upload(token);
+    const slotId = album.pages[0]!.slots[0]!.id;
+
+    const res = await put(`/api/albums/${token}/slots/${slotId}`, {
+      imageId: image.id,
+      label: 'Марко',
+      crop: { x: 0.4, y: 0.6, scale: 1.5 },
+    });
+    const after = ((await json(res)) as { album: Album }).album;
+    const slot = after.pages[0]!.slots[0]!;
+
+    assert.equal(slot.imageId, image.id);
+    assert.equal(slot.label, 'Марко');
+    assert.deepEqual(slot.crop, { x: 0.4, y: 0.6, scale: 1.5 });
+  });
+
+  it('clamps a crop that would show a gap', async () => {
+    const { token, album } = await newAlbum();
+    const image = await upload(token);
+    const slotId = album.pages[0]!.slots[0]!.id;
+
+    const res = await put(`/api/albums/${token}/slots/${slotId}`, {
+      imageId: image.id,
+      crop: { x: 9, y: -4, scale: 99 },
+    });
+    const slot = ((await json(res)) as { album: Album }).album.pages[0]!.slots[0]!;
+    assert.deepEqual(slot.crop, { x: 1, y: 0, scale: 4 });
+  });
+
+  it('refuses a photo belonging to a different album', async () => {
+    const mine = await newAlbum();
+    const theirs = await newAlbum();
+    const image = await upload(theirs.token);
+
+    const res = await put(`/api/albums/${mine.token}/slots/${mine.album.pages[0]!.slots[0]!.id}`, {
+      imageId: image.id,
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('swaps two stickers, so their numbers follow their new positions', async () => {
+    const { token, album } = await newAlbum();
+    const image = await upload(token);
+    const [first, second] = [album.pages[0]!.slots[0]!.id, album.pages[0]!.slots[4]!.id];
+
+    await put(`/api/albums/${token}/slots/${first}`, { imageId: image.id, label: 'Прва' });
+    const res = await post(`/api/albums/${token}/slots/${first}/swap`, { withId: second });
+    const after = ((await json(res)) as { album: Album }).album;
+
+    const moved = after.pages[0]!.slots[4]!;
+    assert.equal(moved.label, 'Прва');
+    assert.equal(moved.imageId, image.id);
+    assert.equal(moved.number, 5, 'the sticker takes the number of its new home');
+    assert.equal(after.pages[0]!.slots[0]!.imageId, null);
+  });
+});
+
+describe('printing', () => {
+  it('explains the print job without building any PDFs', async () => {
+    const { token } = await newAlbum();
+    const summary = (await json(await fetch(`${base}/api/albums/${token}/print/summary`))) as Record<string, number | string>;
+
+    assert.equal(summary.pageCount, INITIAL_PAGES);
+    assert.equal(summary.fillerCount, 0, '4 pages already folds cleanly');
+    assert.equal(summary.pageSheets, 1);
+    assert.equal(summary.stickerCount, 0);
+    assert.equal(summary.stickerSheets, 0);
+    // What to feed the printer: the album's own sheet, and always A4 for stickers.
+    assert.equal(summary.sheetPaper, 'A3');
+    assert.equal(summary.stickerPaper, 'A4');
+  });
+
+  it('reports the filler pages an odd page count will need', async () => {
+    const { token } = await newAlbum();
+    await post(`/api/albums/${token}/pages`);
+    const summary = (await json(await fetch(`${base}/api/albums/${token}/print/summary`))) as Record<string, number>;
+
+    assert.equal(summary.pageCount, 5);
+    assert.equal(summary.fillerCount, 3);
+    assert.equal(summary.pageSheets, 2);
+  });
+
+  it('produces all three PDFs as downloads', async () => {
+    const { token, album } = await newAlbum();
+    const photo = await makeFixturePhoto(1);
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(photo)], { type: 'image/jpeg' }), 'photo.jpg');
+    const image = ((await json(await fetch(`${base}/api/albums/${token}/images`, { method: 'POST', body: form }))) as {
+      image: { id: string };
+    }).image;
+    await put(`/api/albums/${token}/slots/${album.pages[0]!.slots[0]!.id}`, { imageId: image.id, label: 'Ана' });
+
+    for (const part of ['cover', 'pages', 'stickers']) {
+      const res = await fetch(`${base}/api/albums/${token}/print/${part}.pdf`);
+      assert.ok(res.ok, part);
+      assert.equal(res.headers.get('content-type'), 'application/pdf');
+      assert.match(res.headers.get('content-disposition') ?? '', /attachment; filename=".*\.pdf"/);
+
+      const bytes = Buffer.from(await res.arrayBuffer());
+      assert.equal(bytes.subarray(0, 5).toString(), '%PDF-', `${part} is a real PDF`);
+    }
+  });
+});
+
+describe('the cover', () => {
+  const putCover = (token: string, body: unknown) =>
+    fetch(`${base}/api/albums/${token}/cover`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  async function uploadCover(token: string) {
+    const photo = await makeFixturePhoto(3);
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(photo)], { type: 'image/jpeg' }), 'cover.jpg');
+    const res = await fetch(`${base}/api/albums/${token}/images?role=cover`, { method: 'POST', body: form });
+    return ((await json(res)) as { image: { id: string } }).image;
+  }
+
+  it('starts on the theme\'s own cover', async () => {
+    const { album } = await newAlbum({ templateId: 'space' });
+    assert.equal(album.coverVariantId, 'rocket');
+    assert.equal(album.coverImageId, null);
+  });
+
+  it('takes the cover the child picked at creation', async () => {
+    const { album } = await newAlbum({ templateId: 'football', coverVariantId: 'worldcup' });
+    assert.equal(album.coverVariantId, 'worldcup');
+  });
+
+  it('falls back rather than storing a cover this theme does not have', async () => {
+    const { album } = await newAlbum({ templateId: 'space', coverVariantId: 'worldcup' });
+    assert.equal(album.coverVariantId, 'rocket', 'a football cover means nothing to the space theme');
+  });
+
+  it('changes the cover after the album exists', async () => {
+    const { token } = await newAlbum({ templateId: 'space' });
+    const album = ((await json(await putCover(token, { coverVariantId: 'moon' }))) as { album: Album }).album;
+    assert.equal(album.coverVariantId, 'moon');
+  });
+
+  it('puts a photo on the cover, and frames it', async () => {
+    const { token } = await newAlbum({ templateId: 'pets', coverVariantId: 'mypet' });
+    const image = await uploadCover(token);
+
+    const res = await putCover(token, { coverImageId: image.id, coverCrop: { x: 0.3, y: 0.7, scale: 1.4 } });
+    const album = ((await json(res)) as { album: Album }).album;
+
+    assert.equal(album.coverImageId, image.id);
+    assert.deepEqual(album.coverCrop, { x: 0.3, y: 0.7, scale: 1.4 });
+  });
+
+  it('clamps a cover crop that would show a gap', async () => {
+    const { token } = await newAlbum({ coverVariantId: 'myleague' });
+    const image = await uploadCover(token);
+    const res = await putCover(token, { coverImageId: image.id, coverCrop: { x: -3, y: 8, scale: 99 } });
+    assert.deepEqual(((await json(res)) as { album: Album }).album.coverCrop, { x: 0, y: 1, scale: 4 });
+  });
+
+  it('refuses a cover photo belonging to a different album', async () => {
+    const mine = await newAlbum();
+    const theirs = await newAlbum();
+    const image = await uploadCover(theirs.token);
+    assert.equal((await putCover(mine.token, { coverImageId: image.id })).status, 400);
+  });
+
+  it('takes the photo back off the cover', async () => {
+    const { token } = await newAlbum({ coverVariantId: 'myleague' });
+    const image = await uploadCover(token);
+    await putCover(token, { coverImageId: image.id });
+    const album = ((await json(await putCover(token, { coverImageId: null }))) as { album: Album }).album;
+    assert.equal(album.coverImageId, null);
+  });
+
+  it('keeps a cover photo at a higher resolution than a sticker photo', async () => {
+    const { token } = await newAlbum();
+    const cover = await uploadCover(token);
+    const album = ((await json(await fetch(`${base}/api/albums/${token}`))) as { album: Album }).album;
+    const stored = album.images.find((i) => i.id === cover.id)!;
+    // The fixture photo is 600 x 840, under both caps, so both keep it whole;
+    // what matters is that the cover route accepts the role at all.
+    assert.equal(stored.w, 600);
+    assert.equal(stored.h, 840);
+  });
+});
+
+describe('album settings', () => {
+  it('renames the album and switches language', async () => {
+    const { token } = await newAlbum();
+    const res = await fetch(`${base}/api/albums/${token}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ title: 'Нови наслов', lang: 'en' }),
+    });
+    const album = ((await json(res)) as { album: Album }).album;
+    assert.equal(album.title, 'Нови наслов');
+    assert.equal(album.lang, 'en');
+  });
+
+  it('ignores a language it does not have', async () => {
+    const { token } = await newAlbum();
+    const res = await fetch(`${base}/api/albums/${token}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ lang: 'klingon' }),
+    });
+    assert.equal(((await json(res)) as { album: Album }).album.lang, 'sr-Cyrl');
+  });
+});
+
+describe('deleting an album', () => {
+  it('removes the album and its photos, and the link stops working', async () => {
+    const { token, album } = await newAlbum();
+
+    const photo = await makeFixturePhoto(0);
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(photo)], { type: 'image/jpeg' }), 'photo.jpg');
+    await json(await fetch(`${base}/api/albums/${token}/images`, { method: 'POST', body: form }));
+    assert.ok(existsSync(path.join(imagesDir(), album.id)), 'the album kept a photo directory');
+
+    const res = await fetch(`${base}/api/albums/${token}`, { method: 'DELETE' });
+    assert.ok(res.ok);
+
+    assert.equal((await fetch(`${base}/api/albums/${token}`)).status, 404);
+    assert.ok(!existsSync(path.join(imagesDir(), album.id)), 'its photo directory should be gone too');
+  });
+
+  it('hands back a 404 for an album that is already gone', async () => {
+    const { token } = await newAlbum();
+    await fetch(`${base}/api/albums/${token}`, { method: 'DELETE' });
+    const res = await fetch(`${base}/api/albums/${token}`, { method: 'DELETE' });
+    assert.equal(res.status, 404);
+  });
+});

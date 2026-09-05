@@ -1,0 +1,42 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      # Album database and uploaded photos both live under here.
+      DATA_DIR: /data
+      # Caddy is the only way in, so its X-Forwarded-For can be believed. The
+      # rate limiter on pairing and invite codes counts per address, and without
+      # this every request would look like it came from Caddy itself.
+      TRUST_PROXY: '1'
+    volumes:
+      - album-data:/data
+    # Not published directly: Caddy terminates TLS in front of it.
+    expose:
+      - '3000'
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      # Set to your domain; Caddy then gets a certificate automatically.
+      # Use ":80" to run without TLS, e.g. behind another proxy.
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+      # The API's own hostname. The local default is a name that resolves
+      # nowhere, so the block is valid Caddy config without claiming the
+      # port SITE_ADDRESS already answers on.
+      API_ADDRESS: ${API_ADDRESS:-http://api.localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  album-data:
+  caddy-data:
+  caddy-config:

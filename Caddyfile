@@ -1,0 +1,40 @@
+# Shared by both hostnames: the app is one container, reached two ways.
+(proxy) {
+	encode zstd gzip
+
+	# Photos are immutable once uploaded, so let the browser keep them.
+	@images path_regexp ^/api/albums/[^/]+/images/
+	header @images Cache-Control "private, max-age=31536000, immutable"
+
+	# A generated PDF should never be served from a cache.
+	@pdf path_regexp ^/api/albums/[^/]+/print/
+	header @pdf Cache-Control "no-store"
+
+	reverse_proxy app:3000 {
+		# Building the three PDFs for a large album can take a few seconds.
+		transport http {
+			response_header_timeout 120s
+		}
+	}
+}
+
+# The album itself. The editor and the API share this origin deliberately —
+# `apps/server/src/app.ts` leans on it, and the frontend calls /api with
+# relative paths — so this host serves both and needs no CORS.
+{$SITE_ADDRESS} {
+	import proxy
+}
+
+# The same API under its own name, for anything that is not the editor.
+# Deliberately only /api: serving the editor here too would put the app on two
+# origins for no gain, and the passport header is origin-scoped.
+{$API_ADDRESS} {
+	handle /api/* {
+		import proxy
+	}
+	handle {
+		respond `{"error":"not found — the album lives on the main domain"}` 404 {
+			close
+		}
+	}
+}
