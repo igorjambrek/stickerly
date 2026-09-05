@@ -1314,14 +1314,20 @@ label.label {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
   gap: 10px;
-  max-height: min(48vh, 420px);
-  overflow-y: auto;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .picsearch__hit {
   display: grid;
+  /* Without this, the column is sized "auto": it fits its content's preferred
+     width, and .picsearch__source below is an unbreakable (nowrap) line that
+     can be a whole sentence for some licences, so that one result would blow
+     out to sentence-width and drag its own image up to match — an aspect
+     ratio and object-fit further down can't help, since the box they're
+     sizing into is already wrong. Pinning the column to the track keeps every
+     card's own line long as it wants without moving the card's own width. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   width: 100%;
   padding: 0;
@@ -1364,6 +1370,9 @@ label.label {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.picsearch__more {
+  justify-self: center;
+}
 .picsearch__back {
   justify-self: start;
 }
@@ -1382,7 +1391,6 @@ label.label {
   }
   .picsearch__grid {
     grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-    max-height: 42vh;
   }
 }
 

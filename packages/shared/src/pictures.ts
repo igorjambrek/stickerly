@@ -51,7 +51,12 @@ export interface PictureSearch {
   provider: string;
   query: string;
   results: PictureHit[];
+  /** Whether asking for the next page (`page` one higher) might find more. */
+  hasMore: boolean;
 }
+
+/** The first page, when nobody says otherwise. */
+export const FIRST_PAGE = 1;
 
 /**
  * What the server can do, asked once so the editor does not offer a door that

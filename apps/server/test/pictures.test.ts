@@ -167,12 +167,23 @@ const OPENVERSE_ANSWER = {
 
 const realFetch = globalThis.fetch;
 
-/** Answers for the provider only; everything else, including the test's own
- *  calls into the app under test, goes out as normal. */
+/**
+ * Answers for the provider, and a Wikipedia that has heard of nobody — these
+ * tests are not about the name bridge, but Serbian and Russian now consult it
+ * on every search (see pictures.ts), so a stub that only knew Openverse would
+ * make every one of them reach out to the real Wikipedia. Everything else,
+ * including the test's own calls into the app under test, goes out as normal.
+ */
 function stubProvider(): void {
   globalThis.fetch = (async (input: Parameters<typeof realFetch>[0], init?: Parameters<typeof realFetch>[1]) => {
-    if (String(input instanceof Request ? input.url : input).startsWith('https://api.openverse.org/')) {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.startsWith('https://api.openverse.org/')) {
       return new Response(JSON.stringify(OPENVERSE_ANSWER), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.startsWith('https://sr.wikipedia.org/') || url.startsWith('https://ru.wikipedia.org/')) {
+      return new Response(JSON.stringify({ query: { pages: {} } }), {
         headers: { 'content-type': 'application/json' },
       });
     }
@@ -245,6 +256,114 @@ describe('picks', () => {
 });
 
 /**
+ * More than one screenful, without pretending a provider can hand back more
+ * than it will ever hand back in one answer.
+ */
+describe('paging further into the shelf', () => {
+  after(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it('asks openverse for the page it was told to, and says whether there is another', async () => {
+    const pagesAsked: string[] = [];
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!url.startsWith('https://api.openverse.org/')) throw new Error(`unexpected call to ${url}`);
+      pagesAsked.push(new URL(url).searchParams.get('page') ?? '');
+      return new Response(JSON.stringify({ ...OPENVERSE_ANSWER, page_count: 3 }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const first = await createPictures().search('lion', 'en', 1);
+    assert.equal(first.hasMore, true, 'page 1 of 3 said there was nothing more');
+    assert.equal(first.results.length, 2);
+
+    const second = await createPictures().search('lion', 'en', 2);
+    assert.equal(second.results.length, 2);
+
+    assert.deepEqual(pagesAsked, ['1', '2']);
+  });
+
+  it('says there is no more once the last page has come back', async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ ...OPENVERSE_ANSWER, page_count: 1 }), {
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+
+    const found = await createPictures().search('lion', 'en', 1);
+    assert.equal(found.hasMore, false);
+  });
+
+  /**
+   * A later page is asked for with the spelling the first page settled on, and
+   * the name bridge is never consulted again to produce it — the spelling
+   * cannot change on page two, and asking would only spend the one rate limit
+   * every child on this deployment shares.
+   */
+  it('does not consult the name bridge again for a later page', async () => {
+    let wikiKnocks = 0;
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://api.openverse.org/')) {
+        return new Response(JSON.stringify(OPENVERSE_ANSWER), { headers: { 'content-type': 'application/json' } });
+      }
+      wikiKnocks++;
+      return new Response(JSON.stringify({ query: { pages: {} } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const found = await createPictures().search('lav', 'sr-Latn', 2);
+    assert.equal(wikiKnocks, 0, 'a later page went looking for a better spelling anyway');
+    assert.equal(found.query, 'lav', 'a later page renamed a search that never got the chance to be renamed');
+  });
+
+  describe('the google provider, which pages by result index rather than a page number', () => {
+    const savedEnv = { ...process.env };
+
+    before(() => {
+      process.env.PICTURE_SEARCH = 'google';
+      process.env.GOOGLE_API_KEY = 'test-key';
+      process.env.GOOGLE_CSE_ID = 'test-cse';
+    });
+
+    after(() => {
+      process.env = savedEnv;
+      globalThis.fetch = realFetch;
+    });
+
+    it('starts the next page `num` results after the last one', async () => {
+      const starts: string[] = [];
+      globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (!url.startsWith('https://www.googleapis.com/')) throw new Error(`unexpected call to ${url}`);
+        const params = new URL(url).searchParams;
+        const start = params.get('start') ?? '';
+        starts.push(start);
+        const item = {
+          title: 'A lion',
+          link: 'https://pictures.example.com/lion.jpg',
+          image: { thumbnailLink: 'https://pictures.example.com/lion-small.jpg', width: 800, height: 600 },
+        };
+        const body: Record<string, unknown> = { items: [item] };
+        // Google says so by including a next page, not by a count or a flag.
+        if (start === '1') body.queries = { nextPage: [{ startIndex: 11 }] };
+        return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+      }) as typeof fetch;
+
+      const first = await createPictures().search('lion', 'en', 1);
+      assert.equal(first.hasMore, true);
+
+      const second = await createPictures().search('lion', 'en', 2);
+      assert.equal(second.hasMore, false);
+
+      assert.deepEqual(starts, ['1', '11']);
+    });
+  });
+});
+
+/**
  * A name said out loud, and spelled the way it sounded.
  *
  * This is the whole reason `entities.ts` exists: a Serbian recogniser writes
@@ -300,17 +419,86 @@ describe('a name that was spelled the way it sounded', () => {
   });
 
   /**
-   * The restraint is the design. A word that already found pictures is never
-   * sent through Wikipedia, because full-text search would rank a singer called
-   * Taylor Love above the animal a child asking for `lav` wants.
+   * Serbian and Russian consult Wikipedia on every search now — see pictures.ts
+   * for why a full shelf is not evidence it is the right shelf. But a bridge
+   * that agrees with what was already asked is not a rename: no second
+   * provider search happens, and what is reported back is what the child said.
    */
-  it('leaves a search that already found something completely alone', async () => {
+  it('does not go looking for a second spelling when Wikipedia agrees with the first', async () => {
     const { openverseQueries } = stubTheWholeChain();
     const found = await createPictures().search(CANONICAL, 'sr-Latn');
 
     assert.equal(found.results.length, 2);
     assert.equal(found.query, CANONICAL);
-    assert.deepEqual(openverseQueries, [CANONICAL], 'a second spelling was looked for anyway');
+    assert.deepEqual(openverseQueries, [CANONICAL], 'a spelling wikipedia already agreed with was searched again');
+  });
+
+  /**
+   * The actual bug this bridge exists for now. Openverse's page size is capped
+   * well below its real result count, so `lav` comes back with a full shelf —
+   * armoured vehicles, not lions — and the old zero-results-only trigger never
+   * fired. Serbian is no longer given that restraint, so the better spelling
+   * still gets a chance even though the first search was not empty.
+   */
+  it('still checks Serbian when the first search already found something, and can still swap', async () => {
+    const junk = {
+      results: [
+        {
+          id: 'x1',
+          title: 'LAV III',
+          url: 'https://pictures.example.com/lav3.jpg',
+          thumbnail: 'https://pictures.example.com/lav3-small.jpg',
+          source: 'wiki',
+          license: '',
+          license_version: '',
+          width: 100,
+          height: 100,
+        },
+      ],
+    };
+    const openverseQueries: string[] = [];
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+
+      if (url.startsWith('https://api.openverse.org/')) {
+        const q = new URL(url).searchParams.get('q') ?? '';
+        openverseQueries.push(q);
+        return json(q === 'Lion' ? OPENVERSE_ANSWER : junk);
+      }
+      if (url.startsWith('https://sr.wikipedia.org/')) {
+        return json({ query: { pages: { '1': { title: 'Лав', pageprops: { wikibase_item: 'Q140' } } } } });
+      }
+      return json({ entities: { Q140: { sitelinks: { enwiki: { title: 'Lion' } } } } });
+    }) as typeof fetch;
+
+    const found = await createPictures().search('lav', 'sr-Latn');
+
+    assert.equal(found.query, 'Lion', 'a shelf full of the wrong thing stopped the better spelling being tried');
+    assert.deepEqual(openverseQueries, ['lav', 'Lion']);
+    assert.equal(found.results.length, 2);
+  });
+
+  /** The restraint English keeps: a word that already found something is left
+   *  alone, and Wikipedia is never even asked. */
+  it('leaves English alone when it already found something', async () => {
+    let wikiKnocks = 0;
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://api.openverse.org/')) {
+        return new Response(JSON.stringify(OPENVERSE_ANSWER), { headers: { 'content-type': 'application/json' } });
+      }
+      wikiKnocks++;
+      return new Response(JSON.stringify({ query: { pages: {} } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const found = await createPictures().search('lion', 'en');
+
+    assert.equal(found.query, 'lion');
+    assert.equal(wikiKnocks, 0, 'english consulted wikipedia even though the shelf was already full');
   });
 
   it('keeps the words the child used when the other spelling finds nothing either', async () => {
@@ -442,6 +630,37 @@ describe('the routes', () => {
     assert.equal(body.provider, 'openverse');
     assert.equal(body.results.length, 2);
     assert.ok(body.results[0]!.pick.length > 0);
+  });
+
+  it('turns the page when asked to, and reports it as a boolean either way', async () => {
+    const pagesAsked: string[] = [];
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0], init?: Parameters<typeof realFetch>[1]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://api.openverse.org/')) {
+        pagesAsked.push(new URL(url).searchParams.get('page') ?? '');
+        return new Response(JSON.stringify(OPENVERSE_ANSWER), { headers: { 'content-type': 'application/json' } });
+      }
+      return realFetch(input, init);
+    }) as typeof fetch;
+
+    try {
+      const res = await fetch(
+        `${base}/api/albums/${token}/pictures?q=${encodeURIComponent('лав')}&lang=sr-Cyrl&page=2`,
+      );
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as PictureSearch;
+      assert.equal(typeof body.hasMore, 'boolean');
+      // Page two of a search already under way, so no wiki call and no
+      // renaming — the provider is asked for exactly that page, once.
+      assert.deepEqual(pagesAsked, ['2']);
+    } finally {
+      stubProvider();
+    }
+  });
+
+  it('treats a page that is not a real page number as the first one', async () => {
+    const res = await fetch(`${base}/api/albums/${token}/pictures?q=${encodeURIComponent('лав')}&page=not-a-number`);
+    assert.equal(res.status, 200);
   });
 
   it('does not answer one for an album that does not exist', async () => {

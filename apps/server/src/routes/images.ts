@@ -31,6 +31,13 @@ const roleOf = (query: unknown): ImageRole =>
 
 const langOf = (value: unknown): Lang => (LANGS.includes(value as Lang) ? (value as Lang) : DEFAULT_LANG);
 
+/** The first page unless told otherwise, and never a page before it — a
+ *  nonsense value is not worth a 400 when "1" is a perfectly good answer. */
+const pageOf = (value: unknown): number => {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 1 ? n : 1;
+};
+
 export function imageRoutes(repo: Repo, live: Realtime, pictures: Pictures) {
   // Searching costs somebody else's quota and fetching costs our bandwidth, so
   // both are counted per caller. Same window as the code claims next door.
@@ -70,7 +77,7 @@ export function imageRoutes(repo: Repo, live: Realtime, pictures: Pictures) {
      * Behind the album token like everything else: this is not an image search
      * the internet may use, it is one the holder of an album link may use.
      */
-    app.get<{ Params: TokenParams; Querystring: { q?: string; lang?: string } }>(
+    app.get<{ Params: TokenParams; Querystring: { q?: string; lang?: string; page?: string } }>(
       '/api/albums/:token/pictures',
       async (req) => {
         repo.albumId(req.params.token);
@@ -80,8 +87,9 @@ export function imageRoutes(repo: Repo, live: Realtime, pictures: Pictures) {
         // The query that comes back is the one the pictures were found by,
         // which is not always the one that was asked: a name said out loud in
         // Serbian is spelled in Serbian, and the pictures are labelled in
-        // English. The editor shows the difference rather than hiding it.
-        const found = await pictures.search(req.query.q ?? '', langOf(req.query.lang));
+        // English. The editor shows the difference rather than hiding it, and
+        // asks for later pages using that spelling rather than the original.
+        const found = await pictures.search(req.query.q ?? '', langOf(req.query.lang), pageOf(req.query.page));
         return { provider: pictures.provider, ...found };
       },
     );
