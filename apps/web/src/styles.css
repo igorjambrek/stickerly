@@ -517,6 +517,116 @@ label.label {
   );
 }
 
+/*
+ * Turning a page.
+ *
+ * A turn replaces both halves at once, so the pair moves the way the paper
+ * would: the leaf that has just come over is hinged at the spine and falls the
+ * last sixty degrees onto the book, the fold in shadow until it lies flat,
+ * while the page it uncovers — which was under it the whole time — comes out
+ * from behind it. Going forward the leaf lands on the left and the right page
+ * is uncovered; going back, the mirror. `Editor.tsx` says which is which and
+ * keys both by the spread, so every turn hands the browser a fresh element and
+ * the animation starts again even when the child turns the same way twice.
+ *
+ * The perspective sits inside the transform rather than on the parent, so a
+ * page standing still is not left in a 3D context it never uses. And nothing
+ * here can make the spread wider: hinged on the spine, the free edge swings
+ * *towards* it, so a page under way covers less room than it does at rest —
+ * which is what lets this run inside the phone's snapping track without
+ * shifting where the track snaps.
+ */
+.spread__leaf {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  --leaf-swing: 62deg;
+}
+
+/* The shadow the fold casts across the leaf: deepest at the spine, gone flat. */
+.spread__leaf::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Left-hand page: hinged on its right edge, which is the spine. */
+.spread__half:first-child .spread__leaf {
+  border-radius: 8px 2px 2px 8px;
+  transform-origin: 100% 50%;
+  --leaf-from: var(--leaf-swing);
+}
+.spread__half:first-child .spread__leaf::after {
+  background: linear-gradient(to left, rgba(18, 26, 42, 0.5), rgba(18, 26, 42, 0) 58%);
+}
+/* Right-hand page: the same thing seen in a mirror. */
+.spread__half:last-child .spread__leaf {
+  border-radius: 2px 8px 8px 2px;
+  transform-origin: 0 50%;
+  --leaf-from: calc(var(--leaf-swing) * -1);
+}
+.spread__half:last-child .spread__leaf::after {
+  background: linear-gradient(to right, rgba(18, 26, 42, 0.5), rgba(18, 26, 42, 0) 58%);
+}
+
+.spread__leaf[data-leaf='turn'] {
+  animation: leaf-turn 0.46s cubic-bezier(0.22, 0.68, 0.28, 1);
+}
+.spread__leaf[data-leaf='turn']::after {
+  animation: leaf-fold 0.46s ease-out;
+}
+.spread__leaf[data-leaf='uncover'] {
+  animation: leaf-uncover 0.42s ease-out;
+}
+
+/*
+ * Both ends of the turn name the whole transform, identity and all: a list
+ * interpolated against `none` has to invent an identity for `perspective()`,
+ * and what it invents is not a flat page.
+ */
+@keyframes leaf-turn {
+  from {
+    transform: perspective(1300px) rotateY(var(--leaf-from));
+    opacity: 0.55;
+  }
+  45% {
+    opacity: 1;
+  }
+  to {
+    transform: perspective(1300px) rotateY(0deg);
+  }
+}
+@keyframes leaf-fold {
+  from {
+    opacity: 0.55;
+  }
+}
+/* Uncovered, not turned: it grows out from the spine rather than off it. */
+@keyframes leaf-uncover {
+  from {
+    transform: scale(0.97);
+    opacity: 0;
+  }
+  60% {
+    opacity: 1;
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/* Asked for stillness, a turn is simply the next spread, already there. */
+@media (prefers-reduced-motion: reduce) {
+  .spread__leaf[data-leaf],
+  .spread__leaf[data-leaf]::after {
+    animation: none;
+  }
+}
+
 /* Which of the two pages the strip is on, and page actions will act on. */
 .page-sheet--active {
   box-shadow: 0 4px 10px rgba(20, 30, 50, 0.1), 0 24px 60px rgba(20, 30, 50, 0.16),
@@ -636,6 +746,17 @@ label.label {
   .spread__half:last-child .page-sheet {
     width: clamp(260px, calc((100dvh - 204px) * 0.707), 440px);
     max-width: 100%;
+    border-radius: 10px;
+  }
+  /*
+   * The hinge is a screen edge here rather than a fold in the middle of a
+   * book, and the leaf is the whole page, so it swings a little less far.
+   */
+  .spread__leaf {
+    --leaf-swing: 52deg;
+  }
+  .spread__half:first-child .spread__leaf,
+  .spread__half:last-child .spread__leaf {
     border-radius: 10px;
   }
   .spread__spine {
@@ -807,6 +928,8 @@ label.label {
   padding: 4px;
   border-radius: 18px;
   border: 2px solid transparent;
+  /* The strip catches up with the page turn rather than jumping to the end of it. */
+  transition: background-color 0.22s ease, border-color 0.22s ease;
 }
 .pagepair[data-current='true'] {
   border-color: color-mix(in srgb, var(--accent) 35%, transparent);
@@ -823,6 +946,7 @@ label.label {
   display: grid;
   place-items: center;
   border: 3px solid transparent;
+  transition: border-color 0.22s ease;
 }
 .pagechip[aria-current='true'] {
   border-color: var(--accent);
@@ -2101,6 +2225,22 @@ label.label {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 16px;
+}
+
+/*
+ * The welcome, and the join screen's button under it: one card and one big
+ * thing to press. The button is full width because on this screen there is
+ * nothing else to press, and a child should not have to aim.
+ */
+.welcome {
+  max-width: 560px;
+}
+.welcome__lead {
+  font-size: 16px;
+  margin: -8px 0 18px;
+}
+.welcome__go {
+  width: 100%;
 }
 
 /* --- Members ------------------------------------------------------------- */

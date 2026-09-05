@@ -17,7 +17,7 @@ import { formatCode, isCode, normaliseCode } from '@album/shared';
 import { ApiError, api } from '../api.ts';
 import { useIdentity } from '../identity.ts';
 import { useLangStore, useT } from '../lang.ts';
-import { suggestNickname } from '../nickname.ts';
+import { PassportForm, usePassportDraft } from '../components/PassportForm.tsx';
 
 export type JoinKind = 'pairing' | 'invite';
 
@@ -34,12 +34,12 @@ export function Join({
 }) {
   const t = useT();
   const lang = useLangStore((s) => s.lang);
-  const { person, ensure, adopt, load } = useIdentity();
+  const { person, checked, ensure, adopt, load } = useIdentity();
 
   const [typed, setTyped] = useState(fromUrl ? formatCode(normaliseCode(fromUrl)) : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [suggestion] = useState(() => suggestNickname(lang));
+  const controls = usePassportDraft(lang, person);
 
   useEffect(() => {
     void load();
@@ -47,6 +47,15 @@ export function Join({
 
   const code = normaliseCode(typed);
   const ready = isCode(code) && !busy;
+
+  /**
+   * An invite is often the very first thing a child sees of this app, so the
+   * passport is asked for here rather than assumed — with a face and a name
+   * already filled in, because the album on the other side of this button is
+   * what they came for. A pairing needs none of it: the passport it is about to
+   * bring over has a face and a name of its own.
+   */
+  const setup = kind === 'invite' && checked && !person;
 
   async function go() {
     if (!ready) return;
@@ -63,7 +72,9 @@ export function Join({
       }
 
       // Joining does need a passport, because it puts a name on the roster.
-      await ensure(lang, { nickname: person ? undefined : suggestion.nickname });
+      // `ensure` keeps the one this device already has; the draft is only ever
+      // spent on a child who arrived here without one.
+      await ensure(lang, { nickname: controls.draft.nickname.trim(), avatar: controls.draft.avatarId });
       const joined = await api.claimInvite(code);
       onOpenAlbum(joined.editToken);
     } catch (err) {
@@ -106,18 +117,25 @@ export function Join({
         />
 
         {/* Only for an invite: pairing brings a name of its own. */}
-        {kind === 'invite' && (
-          <p className="passport__hint">
-            {t('join.youWillBe', { name: person?.nickname ?? suggestion.nickname })}
-          </p>
+        {kind === 'invite' && !setup && person && (
+          <p className="passport__hint">{t('join.youWillBe', { name: person.nickname })}</p>
         )}
-
-        {error && <p className="passport__error">{error}</p>}
-
-        <button type="button" className="btn btn--primary" disabled={!ready} onClick={() => void go()}>
-          {busy ? t('join.working') : t('join.go')}
-        </button>
       </section>
+
+      {/* Between the code and the button, because that is the order it is read in. */}
+      {setup && (
+        <section className="passport__card">
+          <h2>{t('onboarding.title')}</h2>
+          <p className="passport__hint">{t('onboarding.hint')}</p>
+          <PassportForm lang={lang} controls={controls} id="join-name" />
+        </section>
+      )}
+
+      {error && <p className="passport__error">{error}</p>}
+
+      <button type="button" className="btn btn--primary btn--big welcome__go" disabled={!ready} onClick={() => void go()}>
+        {busy ? t('join.working') : t('join.go')}
+      </button>
     </div>
   );
 }

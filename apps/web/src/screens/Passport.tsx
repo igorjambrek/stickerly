@@ -9,11 +9,11 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { AVATARS, TEMPLATES, formatCode, getAvatar } from '@album/shared';
+import { TEMPLATES, formatCode, getAvatar } from '@album/shared';
 import { api, type MintedCode } from '../api.ts';
 import { useIdentity } from '../identity.ts';
 import { useLangStore, useT } from '../lang.ts';
-import { suggestNickname } from '../nickname.ts';
+import { PassportForm, type PassportPatch, usePassportDraft } from '../components/PassportForm.tsx';
 import { QrCode } from '../components/QrCode.tsx';
 
 /** Whole minutes left, floored, so a code never claims more time than it has. */
@@ -90,10 +90,14 @@ export function Passport({ onHome, onOpenAlbum }: { onHome: () => void; onOpenAl
   const lang = useLangStore((s) => s.lang);
   const { person, albums, checked, ensure, update, load } = useIdentity();
 
-  const [nickname, setNickname] = useState('');
-  const [typed, setTyped] = useState(false);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * The only one of the three passport forms that writes as it goes: there is
+   * no button here to mean "that's me", because the child already is.
+   */
+  const controls = usePassportDraft(lang, person, (patch) => save(patch));
 
   /*
    * Nothing has looked for this device's passport if the child arrived here
@@ -110,46 +114,15 @@ export function Passport({ onHome, onOpenAlbum }: { onHome: () => void; onOpenAl
     if (checked && !person) void ensure(lang).catch((err) => setError((err as Error).message));
   }, [checked, person, lang]);
 
-  useEffect(() => {
-    if (person && !typed) setNickname(person.nickname);
-  }, [person, typed]);
-
   const avatar = useMemo(() => getAvatar(person?.avatar), [person?.avatar]);
 
-  const save = (patch: { nickname?: string; avatar?: string }) =>
-    update(patch, lang).catch((err) => setError((err as Error).message));
-
-  /**
-   * Changing the picture renames the child too, but only while the name is
-   * still the one we gave them. Once they have typed their own, the avatar is
-   * just an avatar — silently overwriting a name a child chose would be the
-   * rudest thing this screen could do.
-   */
-  function pickAvatar(avatarId: string) {
-    if (typed || !person) {
-      void save({ avatar: avatarId });
-      return;
-    }
-    const next = suggestNickname(lang, avatarId);
-    setNickname(next.nickname);
-    void save({ avatar: avatarId, nickname: next.nickname });
-  }
-
-  function reroll() {
-    const next = suggestNickname(lang, person?.avatar);
-    setNickname(next.nickname);
-    setTyped(false);
-    void save({ nickname: next.nickname });
-  }
-
-  function commitName() {
-    const trimmed = nickname.trim();
-    // An empty box is a request for a new name, not a request to have none.
-    if (!trimmed) {
-      reroll();
-      return;
-    }
-    if (trimmed !== person?.nickname) void save({ nickname: trimmed });
+  /** A blur that changed nothing is not worth a round trip. */
+  function save(patch: PassportPatch) {
+    const same =
+      (patch.nickname === undefined || patch.nickname === person?.nickname) &&
+      (patch.avatar === undefined || patch.avatar === person?.avatar);
+    if (same) return;
+    void update(patch, lang).catch((err) => setError((err as Error).message));
   }
 
   if (!person) {
@@ -177,44 +150,7 @@ export function Passport({ onHome, onOpenAlbum }: { onHome: () => void; onOpenAl
       {error && <p className="passport__error">{error}</p>}
 
       <section className="passport__card">
-        <label className="label" htmlFor="passport-name">
-          {t('passport.nickname')}
-        </label>
-        <div className="passport__namerow">
-          <input
-            id="passport-name"
-            className="field"
-            value={nickname}
-            maxLength={30}
-            onChange={(e) => {
-              setTyped(true);
-              setNickname(e.target.value);
-            }}
-            onBlur={commitName}
-          />
-          <button type="button" className="btn btn--ghost" onClick={reroll} title={t('passport.reroll')}>
-            🎲
-          </button>
-        </div>
-        <p className="passport__hint">{t('passport.nicknameHint')}</p>
-      </section>
-
-      <section className="passport__card">
-        <h2>{t('passport.avatar')}</h2>
-        <div className="passport__avatars">
-          {AVATARS.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              className="passport__avatar"
-              aria-pressed={a.id === person.avatar}
-              aria-label={a.name[lang]?.word ?? a.id}
-              onClick={() => pickAvatar(a.id)}
-            >
-              {a.emoji}
-            </button>
-          ))}
-        </div>
+        <PassportForm lang={lang} controls={controls} />
       </section>
 
       {adding ? (

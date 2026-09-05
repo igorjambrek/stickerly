@@ -88,7 +88,10 @@ export function peopleRoutes(repo: Repo, identity: Identity) {
       const person = requirePerson(req);
       const body = (req.body ?? {}) as Record<string, unknown>;
       const claimed = repo.claimAlbums(person.id, body.tokens);
-      return { claimed, albums: repo.albumsOf(person.id) };
+      // The same shape as `/api/me`, plus the count: this is the first thing a
+      // browser calls on the load that upgrades it, and it should not have to
+      // ask who it is in a second request.
+      return { claimed, person, albums: repo.albumsOf(person.id) };
     });
   };
 }

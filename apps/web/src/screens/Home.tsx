@@ -19,6 +19,7 @@ import {
   layoutFor,
 } from '@album/shared';
 import { api } from '../api.ts';
+import { readDeviceKey } from '../deviceKey.ts';
 import { useIdentity } from '../identity.ts';
 import { useLangStore, useT } from '../lang.ts';
 import { suggestNickname } from '../nickname.ts';
@@ -27,6 +28,7 @@ import { PHONE, useMedia } from '../useMedia.ts';
 import { CoverSheet, type CoverPhoto } from '../components/CoverSheet.tsx';
 import { CoverPicker } from '../components/CoverPicker.tsx';
 import { LangSwitch } from '../components/LangSwitch.tsx';
+import { Welcome } from './Welcome.tsx';
 
 const GROUPS: { key: Template['group']; labelKey: string }[] = [
   { key: 'action', labelKey: 'home.group.action' },
@@ -168,6 +170,16 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
    */
   const [suggested] = useState(() => suggestNickname(lang));
 
+  /**
+   * A genuinely first visit gets asked who it is before it gets asked to make
+   * anything. Both halves are read from storage rather than waited for, so
+   * neither screen flashes on its way to the other: a device key means a
+   * passport, and albums remembered here mean this browser has been through
+   * this before — passports are younger than the albums some children already
+   * have, and re-introducing yourself to an app you have used is nonsense.
+   */
+  const [welcome, setWelcome] = useState(() => !readDeviceKey() && localRecent.length === 0);
+
   useEffect(() => {
     void identity.load();
   }, []);
@@ -236,17 +248,13 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
     setBusy(true);
     setError(null);
     try {
-      // The passport is made here, at the first moment it means anything: the
-      // child now owns something worth being able to find again. The name on
-      // the cover and the name on the passport are one value, not two, so a
-      // name typed over the suggestion renames the passport as well.
+      // A passport, if this browser somehow got here without one — the welcome
+      // was skipped by an old local album, or its minting failed. The name on
+      // the cover seeds it, but never renames a passport that already exists:
+      // this box takes both children in "Милица и Ана", and the child already
+      // said who they are on a screen that asked properly.
       await identity
         .ensure(lang, { nickname: ownerName.trim() })
-        .then((person) =>
-          ownerEdited && ownerName.trim() !== person.nickname
-            ? identity.update({ nickname: ownerName.trim() }, lang)
-            : undefined,
-        )
         .catch(() => undefined); // An album without a passport is still an album.
 
       const made = await api.createAlbum({
@@ -272,6 +280,14 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
       setBusy(false);
     }
   }
+
+  /*
+   * Before anything else, once: a face and a name. It is rendered from here
+   * rather than routed to, because it is a moment in making an album and not a
+   * place — nothing links to it, and reloading lands on whichever of the two
+   * screens is now true.
+   */
+  if (welcome) return <Welcome onDone={() => setWelcome(false)} />;
 
   return (
     <div className="home" style={{ ['--accent' as string]: chosen.palette.badge }}>
