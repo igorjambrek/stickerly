@@ -30,6 +30,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import type { Lang, PictureHit } from '@album/shared';
 import { MAX_QUERY, cleanQuery } from '@album/shared';
 import { config } from './config.ts';
+import { canonicalName } from './entities.ts';
 import { Invalid } from './repo.ts';
 
 /** What a provider knows about one picture, before it is signed and sent out. */
@@ -143,6 +144,65 @@ const google: Provider = {
   },
 };
 
+/**
+ * How wide a thumbnail we ask a host for, when the host lets us ask.
+ *
+ * A shelf tile is never painted bigger than this, and the originals behind
+ * these results routinely run to four megabytes — twenty of those in one grid
+ * is its own kind of broken, on a phone especially.
+ */
+const THUMB_WIDTH = 400;
+
+/**
+ * `upload.wikimedia.org/wikipedia/commons/1/13/Name.jpg` ->
+ * `commons.wikimedia.org/wiki/Special:FilePath/Name.jpg?width=400`, or '' for
+ * anything not hosted there.
+ *
+ * `Special:FilePath` is Wikimedia's documented way to ask for a file by name at
+ * a size, and it is stable in a way that guessing the `/thumb/` path is not.
+ * The wiki named in the path is the wiki that holds the file: `commons` is the
+ * shared one, but a picture can live on a single language's wiki instead.
+ */
+export function wikimediaThumb(fullUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(fullUrl);
+  } catch {
+    return '';
+  }
+  if (url.hostname !== 'upload.wikimedia.org') return '';
+
+  // /wikipedia/<wiki>/<a>/<ab>/<file>, or the same with /thumb/ after the wiki
+  // and a size-prefixed copy of the name on the end.
+  const parts = url.pathname.split('/').filter(Boolean);
+  if (parts[0] !== 'wikipedia' || parts.length < 5) return '';
+  const file = parts[2] === 'thumb' ? parts[5] : parts[parts.length - 1];
+  if (!file) return '';
+
+  const wiki = parts[1]!;
+  const host = wiki === 'commons' ? 'commons.wikimedia.org' : `${wiki}.wikipedia.org`;
+  // The segment is already percent-encoded, having come out of a URL.
+  return `https://${host}/wiki/Special:FilePath/${file}?width=${THUMB_WIDTH}`;
+}
+
+/**
+ * A thumbnail we can actually paint.
+ *
+ * Openverse does not serve thumbnails itself: `thumbnail` points back at its
+ * own resizing proxy, and that proxy answers `424 Thumbnail unavailable from
+ * provider` for whole classes of result — every Wikimedia-hosted picture, at
+ * the time of writing. The search is fine and the full picture is fine; only
+ * the one URL the grid paints is dead, which is a blank shelf in front of a
+ * child who asked for a footballer and was found twenty good photographs of him.
+ *
+ * So where the host will resize for us, we ask it ourselves rather than trust
+ * the provider's proxy. Everything else keeps the thumbnail the provider gave,
+ * because checking it from here would mean fetching twenty URLs before
+ * answering; the browser carries that half instead, and a tile whose picture
+ * will not load takes itself down.
+ */
+const thumbFor = (hit: RawHit): string => wikimediaThumb(hit.fullUrl) || hit.thumbUrl || hit.fullUrl;
+
 const providerFor = (name: string): Provider | null =>
   name === 'google' ? google : name === 'openverse' ? openverse : null;
 
@@ -195,11 +255,18 @@ function open(pick: string): string {
   return claim.u;
 }
 
+/** What came back, and the words that found it — not always the words asked. */
+export interface Found {
+  /** The query the results actually came from, spelled the way it was searched. */
+  query: string;
+  results: PictureHit[];
+}
+
 export interface Pictures {
   /** False when no provider is configured; the editor then hides the door. */
   enabled: boolean;
   provider: string;
-  search(query: string, lang: Lang): Promise<PictureHit[]>;
+  search(query: string, lang: Lang): Promise<Found>;
   /** The address behind a handle this process signed. Throws for anything else. */
   open(pick: string): string;
 }
@@ -218,14 +285,33 @@ export function createPictures(): Pictures {
       if (query.length > MAX_QUERY) throw new Invalid('that is a very long thing to look for');
 
       const expiresAt = Date.now() + config.pictures.pickTtlMs;
-      const hits = await provider.search(query, lang);
 
-      return hits.slice(0, config.pictures.maxResults).map((hit, index) => ({
+      let asked = query;
+      let hits = await provider.search(query, lang);
+
+      // Nothing at all is the shape a name takes when it was spelled the way it
+      // sounds in the language it was said in. Ask what it is called in English
+      // and have one more go; anything that did find pictures is left alone.
+      if (hits.length === 0) {
+        const canonical = await canonicalName(query, lang);
+        if (canonical && canonical.toLowerCase() !== query.toLowerCase()) {
+          const second = await provider.search(canonical, lang);
+          // Only adopt the other spelling if it was the better one. A rename
+          // that finds nothing either is a rename worth forgetting, so the
+          // child is told what they asked rather than what we guessed.
+          if (second.length > 0) {
+            asked = canonical;
+            hits = second;
+          }
+        }
+      }
+
+      const results = hits.slice(0, config.pictures.maxResults).map((hit, index) => ({
         // Something to key a list by, and nothing more. Deriving it from the
         // address would put the address back in front of the browser, which is
         // the one thing `pick` exists to avoid.
         id: `${index}-${createHash('sha256').update(hit.fullUrl).digest('base64url').slice(0, 12)}`,
-        thumbUrl: hit.thumbUrl,
+        thumbUrl: thumbFor(hit),
         width: hit.width,
         height: hit.height,
         title: hit.title,
@@ -233,6 +319,8 @@ export function createPictures(): Pictures {
         licence: hit.licence,
         pick: sign(hit.fullUrl, expiresAt),
       }));
+
+      return { query: asked, results };
     },
 
     open,

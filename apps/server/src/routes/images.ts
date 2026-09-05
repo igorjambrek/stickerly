@@ -77,8 +77,12 @@ export function imageRoutes(repo: Repo, live: Realtime, pictures: Pictures) {
         if (!pictures.enabled) throw new Invalid('picture search is switched off');
         if (!searches.take(req.ip)) throw new Invalid('too many searches, wait a minute');
 
-        const results = await pictures.search(req.query.q ?? '', langOf(req.query.lang));
-        return { provider: pictures.provider, query: req.query.q ?? '', results };
+        // The query that comes back is the one the pictures were found by,
+        // which is not always the one that was asked: a name said out loud in
+        // Serbian is spelled in Serbian, and the pictures are labelled in
+        // English. The editor shows the difference rather than hiding it.
+        const found = await pictures.search(req.query.q ?? '', langOf(req.query.lang));
+        return { provider: pictures.provider, ...found };
       },
     );
 

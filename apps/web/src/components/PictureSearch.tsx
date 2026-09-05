@@ -14,6 +14,14 @@
  * turned off: this component is rendered at `/a/<token>`, and that token is the
  * album's only secret. Browsers trim the path from a cross-origin referrer by
  * default, but "by default" is not where a secret belongs.
+ *
+ * Loading them here is also the only place their being loadable can be found
+ * out. The server picks the most reliable thumbnail it can name, but it cannot
+ * try them without fetching twenty pictures before it answers, and a provider
+ * that hands out a dead one is not rare enough to leave to chance. So a tile
+ * whose picture does not arrive removes itself from the shelf: a child choosing
+ * between eleven photographs is not owed the nine that were never going to
+ * paint, and a grey broken square reads as the app being broken.
  */
 
 import { useCallback, useState } from 'react';
@@ -38,6 +46,9 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
   const [results, setResults] = useState<PictureHit[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [taking, setTaking] = useState<string | null>(null);
+  const [broken, setBroken] = useState<ReadonlySet<string>>(() => new Set());
+  // What the pictures were actually found by, when that is not what was asked.
+  const [foundAs, setFoundAs] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
   const run = useCallback(
@@ -46,12 +57,19 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
       if (!q) return;
       setSearching(true);
       setFailure(null);
+      setBroken(new Set());
       try {
         const found = await api.searchPictures(token, q, lang);
         setResults(found.results);
+        // A name said in Serbian is spelled in Serbian, and the pictures are
+        // labelled in English, so the server may have looked for something
+        // else. Saying which is the difference between a search that
+        // understood the child and one that quietly did its own thing.
+        setFoundAs(found.query.toLowerCase() === q.toLowerCase() ? null : found.query);
       } catch (error) {
         setFailure((error as Error).message);
         setResults(null);
+        setFoundAs(null);
       } finally {
         setSearching(false);
       }
@@ -79,6 +97,9 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
     }
   }
 
+  // What the child actually gets to choose between: everything found, less
+  // whatever would not load.
+  const shelf = results?.filter((hit) => !broken.has(hit.id)) ?? null;
   const busy = searching || taking !== null;
   // The recogniser says `denied`, `nothing` or `failed`; which sentence a child
   // reads for each of those is i18n's business, not the microphone's.
@@ -87,10 +108,7 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
   return (
     <div className="picsearch">
       <div className="picsearch__ask">
-        {/* Voice search temporarily disabled until it's fixed: the microphone
-            button is commented out so the speech path cannot be started. The
-            typed box below is the only way in for now. */}
-        {/* {voice.supported && (
+        {voice.supported && (
           <button
             type="button"
             className={`picsearch__mic${voice.listening ? ' picsearch__mic--on' : ''}`}
@@ -101,7 +119,7 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
           >
             {voice.listening ? '🔴' : '🎤'}
           </button>
-        )} */}
+        )}
 
         <input
           className="field picsearch__field"
@@ -128,6 +146,7 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
         </button>
       </div>
 
+      {foundAs && !searching && <p className="picsearch__note">{t('pictures.foundAs', { name: foundAs })}</p>}
       {message && <p className="picsearch__note">{t(message)}</p>}
       {!voice.supported && !message && <p className="picsearch__note">{t('pictures.noVoice')}</p>}
       {failure && <p className="picsearch__note picsearch__note--bad">{failure}</p>}
@@ -136,9 +155,16 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
         <p className="picsearch__note">{t('pictures.empty')}</p>
       )}
 
-      {results && results.length > 0 && (
+      {/* Found something, and not one of them would paint. Saying "nothing for
+          that word" here would be a lie, and would send the child looking for a
+          different word when the word was never the problem. */}
+      {results && results.length > 0 && shelf!.length === 0 && !searching && (
+        <p className="picsearch__note">{t('pictures.unshowable')}</p>
+      )}
+
+      {shelf && shelf.length > 0 && (
         <ul className="picsearch__grid">
-          {results.map((hit) => (
+          {shelf.map((hit) => (
             <li key={hit.id}>
               <button
                 type="button"
@@ -153,6 +179,9 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
                   loading="lazy"
                   decoding="async"
                   referrerPolicy="no-referrer"
+                  // The address behind this picture is deliberately not here to
+                  // retry with, so there is nothing to do but stand down.
+                  onError={() => setBroken((was) => new Set(was).add(hit.id))}
                 />
                 <span className="picsearch__credit">
                   {/* Where it came from, and whether it may be reused. An empty
