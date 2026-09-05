@@ -166,10 +166,16 @@ export const api = {
   /** What this deployment can do. Asked once; picture search may be switched off. */
   features: () => request<Features>('/api/features'),
 
-  /** Pictures to choose from, for a child who has none of their own to hand. */
-  searchPictures: (token: string, query: string, lang: Lang) =>
+  /**
+   * Pictures to choose from, for a child who has none of their own to hand.
+   * `page` asks for more of the same search — pass the `query` a previous
+   * page came back with, not necessarily the words first typed, since that is
+   * the spelling the search actually ran on.
+   */
+  searchPictures: (token: string, query: string, lang: Lang, page = 1) =>
     request<PictureSearch>(
-      `${albumBase(token)}/pictures?q=${encodeURIComponent(query)}&lang=${encodeURIComponent(lang)}`,
+      `${albumBase(token)}/pictures?q=${encodeURIComponent(query)}&lang=${encodeURIComponent(lang)}` +
+        (page > 1 ? `&page=${page}` : ''),
     ),
 
   /**

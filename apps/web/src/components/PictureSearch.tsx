@@ -50,6 +50,13 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
   // What the pictures were actually found by, when that is not what was asked.
   const [foundAs, setFoundAs] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  // The exact spelling the current shelf was found by (which may differ from
+  // what was typed), the page it is up to, and whether asking for one more
+  // would find anything — all of it forgotten the moment a new search starts.
+  const [resolvedQuery, setResolvedQuery] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const run = useCallback(
     async (raw: string) => {
@@ -61,6 +68,9 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
       try {
         const found = await api.searchPictures(token, q, lang);
         setResults(found.results);
+        setResolvedQuery(found.query);
+        setPage(1);
+        setHasMore(found.hasMore);
         // A name said in Serbian is spelled in Serbian, and the pictures are
         // labelled in English, so the server may have looked for something
         // else. Saying which is the difference between a search that
@@ -69,6 +79,8 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
       } catch (error) {
         setFailure((error as Error).message);
         setResults(null);
+        setResolvedQuery(null);
+        setHasMore(false);
         setFoundAs(null);
       } finally {
         setSearching(false);
@@ -76,6 +88,28 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
     },
     [token, lang],
   );
+
+  /**
+   * One more page of the same search — asked with the spelling that actually
+   * found these pictures, not the words that were first typed, so a renamed
+   * search does not quietly rename itself back on page two.
+   */
+  const loadMore = useCallback(async () => {
+    if (!resolvedQuery) return;
+    setLoadingMore(true);
+    setFailure(null);
+    try {
+      const next = page + 1;
+      const found = await api.searchPictures(token, resolvedQuery, lang, next);
+      setResults((was) => [...(was ?? []), ...found.results]);
+      setPage(next);
+      setHasMore(found.hasMore);
+    } catch (error) {
+      setFailure((error as Error).message);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [token, lang, resolvedQuery, page]);
 
   // A finished sentence goes straight into a search: a child who has just said
   // `лав` out loud has already asked, and a "now press search" step reads as
@@ -100,7 +134,7 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
   // What the child actually gets to choose between: everything found, less
   // whatever would not load.
   const shelf = results?.filter((hit) => !broken.has(hit.id)) ?? null;
-  const busy = searching || taking !== null;
+  const busy = searching || taking !== null || loadingMore;
   // The recogniser says `denied`, `nothing` or `failed`; which sentence a child
   // reads for each of those is i18n's business, not the microphone's.
   const message = voice.error && `pictures.error.${voice.error}`;
@@ -193,6 +227,17 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
             </li>
           ))}
         </ul>
+      )}
+
+      {shelf && shelf.length > 0 && hasMore && (
+        <button
+          type="button"
+          className="btn btn--ghost picsearch__more"
+          onClick={() => void loadMore()}
+          disabled={busy}
+        >
+          {loadingMore ? t('pictures.loadingMore') : t('pictures.more')}
+        </button>
       )}
 
       {taking && <p className="picsearch__note">{t('pictures.adding')}</p>}

@@ -14,28 +14,34 @@
  * article is called `Lamine Yamal` in English. Two hops, and the query is
  * spelled the way the pictures are labelled.
  *
- * This runs only when the ordinary search found nothing, and that restraint is
- * the design rather than an optimisation:
+ * For English this runs only when the ordinary search found nothing, because
+ * it is aimed at names, and a lookup that fails leaves an English speaker
+ * exactly where they already were. But Serbian and Russian are not given that
+ * restraint, for a reason that only shows up once you go and look: Openverse's
+ * page size is capped at twenty, well below how many results it actually has,
+ * so a query that finds nothing but homophones still fills a full page. Ask it
+ * for `lav` and it hands back twenty pictures — LAV armoured vehicles, a
+ * filmmaker named Lav Diaz, Norwegian `lav` meaning lichen — not one of them a
+ * lion. A shelf that is merely full is not evidence it is the right shelf, and
+ * for these two languages an empty result and a wrongly-full one are the same
+ * complaint.
  *
- *  - it is aimed at names, and names are exactly the queries that come back
- *    empty. A word like `lav` already returns twenty pictures, and running it
- *    through here makes it worse rather than better — full-text search ranks a
- *    singer called Taylor Love above the animal, so a child asking for a lion
- *    would be handed a stranger. Bad ranking and no results are different
- *    complaints and this only answers the second one;
- *  - an empty shelf is the one moment a slower answer costs nothing, because
- *    the alternative on offer is failure;
- *  - and Wikimedia rate-limits bursts, so the fewer times we knock, the more
- *    likely somebody is in when it matters.
+ * The other half of that example is `toCyrillic`. Fed the Latin `lav` this
+ * file's own search ranks a singer, `Tejlor Lav` (Caitlyn Taylor Love), above
+ * the animal — which used to be the reason this ran only on an empty shelf at
+ * all. Fed the Cyrillic `лав` it ranks the animal first. A voice search hands
+ * this Latin more often than not, whichever script the editor is set to, so
+ * the query is respelled before it is asked.
  *
- * Nothing here throws. A lookup that fails leaves the child exactly where they
- * already were — in front of the empty shelf they had anyway. Being turned away
- * for asking too often is the one failure worth a second go, because every
- * child on this deployment shares one address and so shares one rate limit.
+ * Nothing here throws. A lookup that fails leaves the child in front of
+ * whatever the first search found — nothing worse. Being turned away for
+ * asking too often is the one failure worth a second go, because every child
+ * on this deployment shares one address and so shares one rate limit.
  */
 
 import type { Lang } from '@album/shared';
 import { config } from './config.ts';
+import { toCyrillic } from './transliterate.ts';
 
 /**
  * Which Wikipedia to ask. Both Serbian scripts are one Wikipedia, and it reads
@@ -145,10 +151,15 @@ export async function canonicalName(query: string, lang: Lang): Promise<string |
   // what the second one still needs.
   const deadline = Date.now() + BUDGET_MS;
 
+  // Serbian Wikipedia ranks its own script; asked in Latin it can rank a
+  // stranger above the thing a child meant, so the query goes in respelled.
+  // `toCyrillic` passes Russian and English text through untouched.
+  const gsrsearch = wiki === 'sr' ? toCyrillic(query) : query;
+
   // The top article for the query, and its Wikidata id, in one call.
   const search = await ask(
     `https://${wiki}.wikipedia.org/w/api.php?action=query&generator=search` +
-      `&gsrsearch=${encodeURIComponent(query)}&gsrlimit=1` +
+      `&gsrsearch=${encodeURIComponent(gsrsearch)}&gsrlimit=1` +
       `&prop=pageprops&ppprop=wikibase_item&format=json`,
     deadline,
   );

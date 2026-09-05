@@ -44,9 +44,15 @@ interface RawHit {
   licence: string;
 }
 
+/** One page of hits, and whether asking for the next page might find more. */
+interface Page {
+  hits: RawHit[];
+  hasMore: boolean;
+}
+
 interface Provider {
   name: string;
-  search(query: string, lang: Lang): Promise<RawHit[]>;
+  search(query: string, lang: Lang, page: number): Promise<Page>;
 }
 
 /** Talking to a provider is a normal fetch: a fixed host we picked ourselves. */
@@ -79,12 +85,14 @@ function openverseLicence(licence: string, version: string): string {
 
 const openverse: Provider = {
   name: 'openverse',
-  async search(query) {
+  async search(query, _lang, page) {
     const url = new URL('https://api.openverse.org/v1/images/');
     url.searchParams.set('q', query);
     // Twenty is the ceiling for an unauthenticated caller — ask for more and
-    // the whole request comes back 401, not a shorter list.
+    // the whole request comes back 401, not a shorter list. More than twenty is
+    // the next page, not a bigger one.
     url.searchParams.set('page_size', String(Math.min(20, config.pictures.maxResults)));
+    url.searchParams.set('page', String(page));
     // Openverse filters adult content by default; said out loud because this is
     // a children's app and a default that silently flips is not a safeguard.
     url.searchParams.set('mature', 'false');
@@ -95,7 +103,7 @@ const openverse: Provider = {
     const body = await getJson(url.toString());
     const results = Array.isArray(body.results) ? (body.results as Record<string, unknown>[]) : [];
 
-    return results
+    const hits = results
       .map((hit) => ({
         thumbUrl: text(hit.thumbnail) || text(hit.url),
         fullUrl: text(hit.url),
@@ -106,12 +114,16 @@ const openverse: Provider = {
         licence: openverseLicence(text(hit.license), text(hit.license_version)),
       }))
       .filter((hit) => hit.fullUrl && hit.thumbUrl);
+
+    // Openverse says plainly how many pages there are at this page size; no
+    // need to guess from whether this page happened to come back full.
+    return { hits, hasMore: size(body.page_count) > page };
   },
 };
 
 const google: Provider = {
   name: 'google',
-  async search(query, lang) {
+  async search(query, lang, page) {
     const url = new URL('https://www.googleapis.com/customsearch/v1');
     url.searchParams.set('key', config.pictures.googleApiKey);
     url.searchParams.set('cx', config.pictures.googleCseId);
@@ -120,13 +132,16 @@ const google: Provider = {
     // Not optional, and not a preference: this app is used by six-year-olds.
     url.searchParams.set('safe', 'active');
     // The API caps a page at ten whatever we ask for.
-    url.searchParams.set('num', String(Math.min(10, config.pictures.maxResults)));
+    const num = Math.min(10, config.pictures.maxResults);
+    url.searchParams.set('num', String(num));
+    // This API pages by result index rather than a page number, `num` apart.
+    url.searchParams.set('start', String((page - 1) * num + 1));
     url.searchParams.set('hl', lang === 'ru' ? 'ru' : lang === 'en' ? 'en' : 'sr');
 
     const body = await getJson(url.toString());
     const items = Array.isArray(body.items) ? (body.items as Record<string, unknown>[]) : [];
 
-    return items
+    const hits = items
       .map((item) => {
         const image = (item.image ?? {}) as Record<string, unknown>;
         return {
@@ -141,6 +156,12 @@ const google: Provider = {
         };
       })
       .filter((hit) => hit.fullUrl && hit.thumbUrl);
+
+    // `nextPage` is present only when there is one — absent, not false.
+    const queries = (body.queries ?? {}) as Record<string, unknown>;
+    const hasMore = Array.isArray(queries.nextPage) && queries.nextPage.length > 0;
+
+    return { hits, hasMore };
   },
 };
 
@@ -260,15 +281,34 @@ export interface Found {
   /** The query the results actually came from, spelled the way it was searched. */
   query: string;
   results: PictureHit[];
+  /** Whether asking for `page + 1` might find more. */
+  hasMore: boolean;
 }
 
 export interface Pictures {
   /** False when no provider is configured; the editor then hides the door. */
   enabled: boolean;
   provider: string;
-  search(query: string, lang: Lang): Promise<Found>;
+  search(query: string, lang: Lang, page?: number): Promise<Found>;
   /** The address behind a handle this process signed. Throws for anything else. */
   open(pick: string): string;
+}
+
+/**
+ * A second search for the spelling Wikipedia found, adopted only if it was
+ * the better one. A rename that finds nothing either is a rename worth
+ * forgetting, so the child is told what they asked rather than what we
+ * guessed. Always page one: the swap is only ever tried on a first search.
+ */
+async function trySwap(
+  provider: Provider,
+  lang: Lang,
+  query: string,
+  canonical: string | null,
+): Promise<{ asked: string; hits: RawHit[]; hasMore: boolean } | null> {
+  if (!canonical || canonical.toLowerCase() === query.toLowerCase()) return null;
+  const page = await provider.search(canonical, lang, 1);
+  return page.hits.length > 0 ? { asked: canonical, hits: page.hits, hasMore: page.hasMore } : null;
 }
 
 export function createPictures(): Pictures {
@@ -278,7 +318,7 @@ export function createPictures(): Pictures {
     enabled: provider !== null,
     provider: provider?.name ?? 'off',
 
-    async search(rawQuery, lang) {
+    async search(rawQuery, lang, page = 1) {
       if (!provider) throw new Invalid('picture search is switched off');
       const query = cleanQuery(rawQuery);
       if (!query) throw new Invalid('say what you are looking for');
@@ -287,23 +327,36 @@ export function createPictures(): Pictures {
       const expiresAt = Date.now() + config.pictures.pickTtlMs;
 
       let asked = query;
-      let hits = await provider.search(query, lang);
+      let hits: RawHit[];
+      let hasMore: boolean;
 
-      // Nothing at all is the shape a name takes when it was spelled the way it
-      // sounds in the language it was said in. Ask what it is called in English
-      // and have one more go; anything that did find pictures is left alone.
-      if (hits.length === 0) {
-        const canonical = await canonicalName(query, lang);
-        if (canonical && canonical.toLowerCase() !== query.toLowerCase()) {
-          const second = await provider.search(canonical, lang);
-          // Only adopt the other spelling if it was the better one. A rename
-          // that finds nothing either is a rename worth forgetting, so the
-          // child is told what they asked rather than what we guessed.
-          if (second.length > 0) {
-            asked = canonical;
-            hits = second;
-          }
+      if (page > 1) {
+        // The spelling was already decided on the first page — asking
+        // Wikipedia again on every later page would spend the one shared rate
+        // limit on a question that cannot have a new answer.
+        ({ hits, hasMore } = await provider.search(query, lang, page));
+      } else if (lang === 'en') {
+        // English is the language these providers are already labelled in, so
+        // a canonical-name lookup only earns its keep there when the shelf is
+        // empty — nothing at all is the shape a name takes when it was
+        // spelled the way it sounds.
+        ({ hits, hasMore } = await provider.search(query, lang, 1));
+        if (hits.length === 0) {
+          const swap = await trySwap(provider, lang, query, await canonicalName(query, lang));
+          if (swap) ({ asked, hits, hasMore } = swap);
         }
+      } else {
+        // Serbian and Russian do not get that restraint: a full shelf is not
+        // evidence it is the right shelf (see entities.ts for why), so the
+        // bridge always runs for them, alongside the first search rather than
+        // after it.
+        const [first, canonical] = await Promise.all([
+          provider.search(query, lang, 1),
+          canonicalName(query, lang),
+        ]);
+        ({ hits, hasMore } = first);
+        const swap = await trySwap(provider, lang, query, canonical);
+        if (swap) ({ asked, hits, hasMore } = swap);
       }
 
       const results = hits.slice(0, config.pictures.maxResults).map((hit, index) => ({
@@ -320,7 +373,7 @@ export function createPictures(): Pictures {
         pick: sign(hit.fullUrl, expiresAt),
       }));
 
-      return { query: asked, results };
+      return { query: asked, results, hasMore };
     },
 
     open,
