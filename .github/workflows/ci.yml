@@ -49,7 +49,7 @@ jobs:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          : "${DEPLOY_HOST:?set the DEPLOY_HOST secret to the instance's public IP}"
+          : "${DEPLOY_HOST:?set the DEPLOY_HOST secret to the instance public IP}"
           : "${DEPLOY_SSH_KEY:?set the DEPLOY_SSH_KEY secret to the nalepko_oci private key}"
 
       - name: Install the deploy SSH key
