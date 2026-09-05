@@ -208,7 +208,7 @@ describe('what a print shop is handed', () => {
     };
 
     for (const [part, subject] of Object.entries(subjects)) {
-      assert.ok(subject.includes(printFileName(album.title, part as PrintPart)), `${part}: names its own file`);
+      assert.ok(subject.includes(printFileName(album.title, part as PrintPart, album.lang)), `${part}: names its own file`);
       assert.ok(subject.includes(sheetPaperFor(part as PrintPart, 'a3')), `${part}: names its paper size`);
     }
 

@@ -2,40 +2,43 @@
 
 Make your own Panini-style sticker album, then print it with one click.
 
-A child makes four choices — a theme, a cover, how big the album is and how
-many stickers go on a page — then fills the numbered slots and presses
-**Штампај албум**. A slot takes a photo dragged in from a desktop, one taken or
-chosen on a phone, or one found by saying out loud what should be on it. Three
-PDFs come back:
+A child makes four choices — a theme, a cover, how big the album is and how many
+stickers go on a page — then fills the numbered slots and presses **Print the
+album**. A slot takes a photo dragged in from a desktop, one taken or chosen on a
+phone, or one found by saying out loud what should be on it. Three PDFs come
+back:
 
 | PDF | Paper | What it is |
 | --- | --- | --- |
-| `korice.pdf` | one sheet, double-sided | the cover, folded around the block |
-| `strane.pdf` | sheets, double-sided | the album pages, imposed so folding puts them in order |
-| `nalepnice.pdf` | A4 sticker paper | the stickers, numbered to match their slots |
+| `<album> - cover.pdf` | one sheet, double-sided | the cover, folded around the block |
+| `<album> - pages.pdf` | sheets, double-sided | the album pages, imposed so folding puts them in order |
+| `<album> - stickers.pdf` | A4 sticker paper | the stickers, numbered to match their slots |
 
-The cover and pages print on A3 for a big album and A4 for a small one. The
-sticker sheets are always A4, because a sticker is always 50 × 70 mm.
+Each file is named after the album, with a suffix — `cover` / `pages` / `stickers`
+in English, `korice` / `strane` / `nalepnice` in Serbian, and so on — in the
+album's own language, so three downloads never land on the same name.
 
-**The child never sees a formatting control.** No margins, no page setup, no DPI,
-no bleed, no "fit to page". Every one of those decisions is made by the code.
+The cover and pages print on A3 for a big album and A4 for a small one; sticker
+sheets are always A4, because a sticker is always 50 × 70 mm.
+
+**The child never sees a formatting control** — no margins, page setup, DPI,
+bleed or "fit to page". Every one of those decisions is made by the code.
 
 ---
 
 ## The rule everything else follows
 
 The editor and the PDF generator must agree on geometry to the millimetre. If
-they drift, stickers do not fit their slots and the product is worthless.
-
-So all layout maths lives in one place — [`packages/shared`](packages/shared/src) —
-and is consumed twice:
+they drift, stickers do not fit their slots and the product is worthless. So all
+layout maths lives once in [`packages/shared`](packages/shared/src) and is
+consumed twice:
 
 - [`apps/web/src/components/PageSheet.tsx`](apps/web/src/components/PageSheet.tsx) turns millimetres into CSS percentages
 - [`apps/server/src/pdf/canvas.ts`](apps/server/src/pdf/canvas.ts) turns the same millimetres into PDF points
 
-No layout constant is ever written twice. The same applies to the artwork: a
-theme describes itself as [shape data](packages/shared/src/shapes.ts), which
-the browser draws as SVG and the PDF draws as vector paths.
+No layout constant is written twice. Artwork is the same: a theme is [shape
+data](packages/shared/src/shapes.ts), drawn as SVG in the browser and as vector
+paths in the PDF.
 
 ```text
 sticker      50 ×  70 mm   the classic Panini size, fixed in every album
@@ -43,37 +46,21 @@ big album   210 × 297 mm   A4 pages, printed two-up on A3 landscape sheets
 small album 148 × 210 mm   A5 pages, printed two-up on A4 landscape sheets
 ```
 
-### Two coordinate systems on one page
-
-A page is drawn in reference millimetres *and* in real ones, and knowing which
-is which is most of understanding this codebase.
-
-**Artwork and chrome** — cover art, page backgrounds, the title band, the page
-number — are authored once against a reference A4 page and drawn through a
-uniform scale. The A series keeps its proportions when halved, so an A5 page is
-the same design at 71%, not a second design. `Panel.scaled()` on the PDF side
-and a scale factor on the editor side are the only places that know about it.
-
-**The sticker grid** is never scaled. A slot outline has to measure exactly
-50 × 70 mm on paper or the sticker will not fit it. So a smaller album gets
-*fewer* slots, never smaller ones — which is exactly why "how many stickers on
-a page" is a real choice rather than a zoom level:
+**Two coordinate systems share every page.** Artwork and chrome — cover art,
+page backgrounds, the title band, the page number — are authored once against a
+reference A4 page and drawn through a uniform scale, so an A5 page is the same
+design at 71%, not a second one. The sticker grid is never scaled: a slot must
+measure exactly 50 × 70 mm on paper, so a smaller album gets *fewer* slots, not
+smaller ones. That is why "how many stickers on a page" is a real choice:
 
 | Album | Choices |
 | --- | --- |
 | small (A4 paper, A5 pages) | 2 or 4 per page |
 | big (A3 paper, A4 pages) | 4, 6 or 9 per page |
 
-The count is *per page*, and every page in the album gets it. An album is read
-two pages at a time, so it is also half of what a child sees at once: nine per
-page is eighteen facing them whenever the album is open. Both the picker and
-the editor draw two pages, and say the doubled number, rather than leaving that
-to be discovered on paper.
-
-Both are chosen once, when the album is created, and cannot change afterwards:
-either would add or destroy slots in an album that already has photos in them.
-The cover is the opposite — it is meant to be played with, and can be changed
-at any time.
+The count is per page and applies to every page. Album size and stickers-per-page
+are both locked at creation — either would add or destroy slots in an album that
+already has photos. The cover can be changed at any time.
 
 ---
 
@@ -91,76 +78,64 @@ Open <http://localhost:5173>.
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | API and editor with hot reload |
-| `npm test` | geometry, imposition, numbering, canvas, print and API tests |
+| `npm test` | geometry, imposition, numbering, canvas, print, API and end-to-end tests |
 | `npm run typecheck` | TypeScript across the whole workspace |
 | `npm run build` | build the frontend into `apps/web/dist` |
 | `npm start` | one process serving API **and** the built frontend on :3000 |
 | `npm run pdf:sample [theme] [cover] [size] [perPage] [lang]` | write the three PDFs to `tmp/` from fixture data |
-| `npm run pdf:sample covers` | write every cover in the app to `tmp/covers.pdf`, one per page |
-
-`npm run pdf:sample` exists so the print output can be checked on real paper
-without touching the UI:
+| `npm run pdf:sample covers` | write every cover to `tmp/covers.pdf`, one per page — the design review |
 
 ```bash
 npm run pdf:sample football champions a3 9
 npm run pdf:sample unicorns candy a4 2 en
 ```
 
-Themes: `football`, `space`, `dinos`, `unicorns`, `pets`, `class`. Each has four
-or five covers; `pdf:sample` lists them if you name one that does not exist.
-
-`npm run pdf:sample covers` is the design review: twenty-odd covers are
-impossible to judge one at a time, and a set that does not hang together is
-worse than any single cover being weak.
+Themes: `football`, `space`, `dinos`, `unicorns`, `pets`, `class`; `pdf:sample`
+lists a theme's covers if you name one that does not exist.
 
 ---
 
 ## Printing
 
-The dialog says this in the child's language; here it is for the grown-up:
+The print dialog says this in the child's language; here it is for the grown-up:
 
-1. **Actual size / 100%.** Turn *fit to page* and *shrink to printable area* off.
-   This is the only setting that matters — everything else is already correct.
-2. **Three files, three papers.** The table below; the dialog badges every
-   download with its own, in colour, because this is the thing a copy shop
-   gets wrong.
-3. **Double-sided, flip on the short edge** for the cover and the pages — the
+1. **Actual size / 100%.** Turn *fit to page* and *shrink to printable area*
+   off. This is the only setting that matters.
+2. **Three files, three papers** (table below). The dialog badges every download
+   with its own, because this is what a copy shop gets wrong.
+3. **Double-sided, flip on the short edge** for the cover and pages — the
    imposition assumes it. Sticker sheets are single-sided.
-4. Fold the page sheets in half, nest them inside one another with the cover
-   outermost, staple twice along the fold.
+4. Fold the page sheets in half, nest them with the cover outermost, staple
+   twice along the fold.
 5. Check with a ruler: the bar in the bottom margin of a sticker sheet must
-   measure exactly **50 mm**. If it does, the printer did not scale the page and
-   every sticker will fit its slot.
+   measure exactly **50 mm**. If it does, nothing was scaled.
 
 | file | paper | sheet | sides |
 | --- | --- | --- | --- |
-| `…-korice.pdf` | card, **200–250 g/m²** | A3 landscape (A4 for a small album) | both, short-edge flip |
-| `…-strane.pdf` | **120–160 g/m²** — 80 g/m² office paper is too thin, the photo behind shows through the sticker | A3 landscape (A4 for a small album) | both, short-edge flip |
-| `…-nalepnice.pdf` | **self-adhesive**, matte | A4 portrait, always | one |
+| `<album> - cover.pdf` | card, **200–250 g/m²** | A3 landscape (A4 for a small album) | both, short-edge flip |
+| `<album> - pages.pdf` | **120–160 g/m²** — 80 g/m² office paper shows the photo through the sticker | A3 landscape (A4 for a small album) | both, short-edge flip |
+| `<album> - stickers.pdf` | **self-adhesive**, matte | A4 portrait, always | one |
 
-Saddle stitching needs a page count divisible by four. Rather than teach an
-eight-year-old that, the app appends autograph and swap pages at print time and
-mentions it in one sentence.
+The file name leads with the album's own name (Cyrillic titles transliterated to
+stay ASCII) and ends with the part in the album's language.
 
-### Handing it to a print shop
+Saddle stitching needs a page count divisible by four, so the app appends
+autograph and swap pages at print time and says so in one sentence.
 
-Most of these albums are not printed at home, and a copy shop is given the
-three PDFs and not the dialog that explained them. So the paper is stated three
-times over from the single description in
-[packages/shared/src/printing.ts](packages/shared/src/printing.ts): as the badge
-on each download, as a note the whole job fits into — ready to paste into a
-message — and in each PDF's own `Subject` metadata, which travels with the file.
-
-`/a/<token>/print` is that note as a page of its own: open it on a phone at the
-counter and show it, or send the link to whoever is doing the printing. The
-print dialog links to it and can copy the link. It sits behind the album's
-secret token like everything else, so nobody needs an account to open it.
+`/a/<token>/print` is the paper note as a page of its own — open it on a phone at
+the copy-shop counter, or send the link. It sits behind the album's secret
+token, so nobody needs an account. That description is written once in
+[packages/shared/src/printing.ts](packages/shared/src/printing.ts) and said three
+times: the download badge, that page, and each PDF's `Subject` metadata. The same
+file also builds each download's name — the album's title, then the part, in the
+album's language — so the browser, the `content-disposition` header and the PDF's
+metadata all agree on what the file is called.
 
 ---
 
 ## Deploying
 
-One container plus a volume. Runs comfortably in 512 MB.
+One container plus a volume, comfortable in 512 MB.
 
 ```bash
 cp .env.example .env       # set SITE_ADDRESS and API_ADDRESS to your domains
@@ -168,87 +143,66 @@ docker compose up -d --build
 ```
 
 Caddy terminates TLS and gets certificates for both names automatically.
-Everything that must survive a restart — the SQLite database and uploaded
-photos — lives in the `album-data` volume at `/data`.
-
-### Two names, one origin
-
-`SITE_ADDRESS` serves the album. `API_ADDRESS` serves the same container's
-`/api` under a name of its own, and 404s everything else.
-
-The editor is *not* pointed at `API_ADDRESS`. It calls `/api` with relative
-paths, so it stays on one origin with the API — which is what makes the
-passport header safe to send and CSRF a non-question (see the comment on
-`DEVICE_HEADER` in `apps/server/src/app.ts`). Putting the editor on the API
-hostname would mean CORS, and would give that reasoning away for nothing. So
-`API_ADDRESS` is for callers that are not the editor.
-
-The album's live socket is an `/api` route like any other, so both names carry
-it and Caddy upgrades it without being told to. Behind a different proxy, the
-one thing to check is that it forwards `Upgrade` — a proxy that does not fails
-quietly, leaving an editor that saves perfectly well and never hears a word from
-anybody else.
-
-### Finding pictures
-
-Picture search works with no configuration at all, and better with some.
-
-| Provider | Set | What you get |
-| --- | --- | --- |
-| **Openverse** (default) | nothing | Openly licensed and public-domain pictures, keyless. Every result carries its licence, which matters here because the output of this app is paper. Anonymous callers get a modest rate limit and at most 20 results a page. |
-| **Google** | `GOOGLE_API_KEY` and `GOOGLE_CSE_ID` | The open web, `safe=active`, and 100 searches a day on the free tier. Used automatically as soon as both are set. |
-
-`PICTURE_SEARCH=off` switches the feature off entirely; the editor asks
-`/api/features` on load and stops offering the door.
-
-Openverse is the default because it needs nothing and its results are ones a
-child may legitimately print and hand to a friend. Its weakness is language: it
-indexes mostly English titles, so `лав` finds a handful of lions and some
-Ukrainian text that happens to contain the word, where `lion` finds twenty. If
-the children using your deployment search in Serbian or Russian, the Google keys
-are worth setting. Note that Google's results come off the open web and carry no
-licence, and the editor says so under each one.
-
-To check either without clicking through the app — which is the way to find out
-whether a key actually works — ask from the command line:
-
-```bash
-npm run pictures:check                 # whatever is configured, looking for a lion
-npm run pictures:check ракета ru
-```
-
-It goes the whole way: search, open the pick, fetch the first picture. Bytes at
-the end mean the address guard, the redirects and the size cap all worked too.
-
-Bing is not an option: Microsoft retired the Bing Search APIs in August 2025.
-
-This has been kept deliberately cheap to host. PDFs are drawn with `pdf-lib`
-rather than rendered through headless Chrome, so there is no browser in the
-image and no 1 GB memory floor — the whole image is about 490 MB, most of it
-the Node base and `sharp`. A Hetzner CX22 (about €4/month) is more than enough;
-any host that gives you a persistent volume will do. Free tiers that wipe the
-disk on restart will not, because both the database and the photos are files.
-
-`better-sqlite3` has no prebuilt binary for this Node version, so the Dockerfile
-compiles it in a separate `deps` stage and copies the result forward. The
-runtime image never gets a compiler.
-
-Back up by copying the volume:
+Everything that must survive a restart — the SQLite database and uploaded photos
+— lives in the `album-data` volume at `/data`. Back it up by copying the volume:
 
 ```bash
 docker run --rm -v nalepko_album-data:/data -v "$PWD":/backup alpine \
   tar czf /backup/album-backup.tar.gz -C /data .
 ```
 
-(The volume carries the compose project name as a prefix — `nalepko_` when the
-checkout is in `/opt/nalepko`, `album_` when it is in `album/`. `docker volume
-ls` settles it.)
+(`docker volume ls` shows the real prefix — `nalepko_` or `album_`, depending on
+the checkout directory.)
 
-### On Oracle Cloud, from nothing
+### Two names, one origin
 
-[infra/oci](infra/oci) builds the whole thing with Terraform, inside the Always
-Free allowance: one `VM.Standard.A1.Flex` at 4 OCPUs and 24 GB — the entire
-Ampere allowance — on a 50 GB boot volume, in a VCN with a single public subnet.
+`SITE_ADDRESS` serves the album. `API_ADDRESS` serves the same container's `/api`
+under a name of its own and 404s everything else. The editor is *not* pointed at
+`API_ADDRESS` — it calls `/api` with relative paths, staying on one origin with
+the API, which is what makes the passport header safe to send and CSRF a
+non-question (see `DEVICE_HEADER` in `apps/server/src/app.ts`). `API_ADDRESS` is
+for callers that are not the editor.
+
+The live socket is an `/api` route, so both names carry it and Caddy upgrades it
+without being told to. Behind another proxy, the one thing to check is that it
+forwards `Upgrade` — one that does not fails quietly.
+
+### Finding pictures
+
+Picture search works with no configuration, and better with some.
+
+| Provider | Set | What you get |
+| --- | --- | --- |
+| **Openverse** (default) | nothing | Openly licensed and public-domain pictures, keyless; every result carries its licence, which matters because the output is paper. Anonymous callers get a modest rate limit and at most 20 results a page. |
+| **Google** | `GOOGLE_API_KEY` and `GOOGLE_CSE_ID` | The open web, `safe=active`, 100 searches a day free. Used automatically once both are set; results carry no licence, and the editor says so under each one. |
+
+`PICTURE_SEARCH=off` switches the feature off entirely; the editor asks
+`/api/features` on load and stops offering it.
+
+Openverse's weakness is language: it indexes mostly English titles, so `лав`
+finds a handful of lions where `lion` finds twenty. If your children search in
+Serbian or Russian, the Google keys are worth setting. Check either from the
+command line — the way to find out whether a key actually works:
+
+```bash
+npm run pictures:check                 # whatever is configured, looking for a lion
+npm run pictures:check ракета ru
+```
+
+It goes the whole way — search, open the pick, fetch the first picture. Bing is
+not an option: Microsoft retired the Bing Search APIs in August 2025.
+
+Kept deliberately cheap to host: PDFs are drawn with `pdf-lib`, not headless
+Chrome, so there is no browser in the image (~490 MB) and no 1 GB memory floor. A
+Hetzner CX22 (~€4/month) or any host with a persistent volume is enough; free
+tiers that wipe the disk on restart are not, because the database and the photos
+are files. `better-sqlite3` has no prebuilt binary for this Node version, so the
+Dockerfile compiles it in a `deps` stage and copies the result forward.
+
+### On Oracle Cloud
+
+[infra/oci](infra/oci) builds the whole thing with Terraform inside the Always
+Free allowance (one `VM.Standard.A1.Flex`, 4 OCPUs, 24 GB, 50 GB boot volume):
 
 ```bash
 terraform -chdir=infra/oci init
@@ -256,23 +210,21 @@ terraform -chdir=infra/oci apply      # prints the IP to put in DNS
 infra/oci/deploy.sh                   # copy the tree up, build it there
 ```
 
-Three things about it are worth knowing:
+Worth knowing: the public IP is reserved, not ephemeral, so DNS survives a
+rebuild (the instance is made with `assign_public_ip = false` and the address
+attached separately); two firewalls must agree — the VCN security list and the
+instance's own iptables, so `cloud-init.yaml` opens 80 and 443 in both; and
+Ampere capacity comes and goes per availability domain — on *out of host
+capacity*, set `availability_domain` to 2 or 3 and retry.
 
-- **The public IP is reserved, not ephemeral.** It outlives the instance, so the
-  DNS records survive a rebuild. That is why the instance is created with
-  `assign_public_ip = false` and the address is attached separately.
-- **Two firewalls have to agree.** The VCN security list is the outer gate and
-  the instance's own iptables is the inner one; Oracle's Ubuntu image ships a
-  ruleset that rejects everything except 22, so `cloud-init.yaml` opens 80 and
-  443 there as well. A box that answers ping and nothing else is almost always
-  this.
-- **Ampere capacity is per availability domain and comes and goes.** If apply
-  fails with *out of host capacity*, set `availability_domain` to 2 or 3 and
-  try again.
-
-The instance builds its own ARM image — four cores manage it in a couple of
-minutes, which is one less thing to host than a registry. `deploy.sh` waits for
-first boot to finish before it tries, and never uploads `data/`.
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs `typecheck`, the tests
+and the frontend build on every pull request and on every push to `main`, and
+then — from `main` only — runs `infra/oci/deploy.sh` if all three pass. It needs
+two repository secrets — `DEPLOY_SSH_KEY` (the private half of `ssh_public_key`)
+and `DEPLOY_HOST` (the reserved IP) — and reads optional `SITE_ADDRESS` /
+`API_ADDRESS` overrides from repository *variables*. Deploys are serialised; a
+pull request, having none, is instead cancelled and restarted by its own next
+commit.
 
 ---
 
@@ -280,13 +232,10 @@ first boot to finish before it tries, and never uploads `data/`.
 
 ```text
 packages/shared/         geometry, imposition, numbering, themes, i18n
-  geometry.ts            paper sizes, the reference page, and every grid position
+  geometry.ts            paper sizes, the reference page, every grid position
   imposition.ts          which album page prints where on which folded sheet
   numbering.ts           sticker numbers, derived from position and nothing else
   shapes.ts              the drawing primitives both renderers understand
-  motifs.ts              colour maths, gradients, glows and abstract motifs
-  figures.ts             the characters: dinosaur, unicorn, rocket, cat, dog
-  art.ts                 what a theme and a cover variant are, as types
   covers.ts              all 25 covers, built from one four-part composition
   templates.ts           the six themes: palettes, page artwork, cover lists
   realtime.ts            the live protocol: what the socket says, both ways
@@ -295,154 +244,131 @@ apps/server/
   routes/                albums, images, print
   repo.ts                SQLite access, scoped to an album's secret token
   realtime.ts            the hub: sockets grouped by album, and what they hear
-  db/migrations/         numbered .sql files, applied at boot
   storage.ts             upload normalising: auto-rotate, strip EXIF, resize
 apps/web/src/
   components/PageSheet   the album page, at a different zoom to the printed one
   components/CoverSheet  the cover, mirroring what cover.ts prints
-  components/CoverPicker the covers of one theme, as pictures
   components/Presence    the roster, with whoever is here right now lit up
-  screens/               Home (four choices, live preview), Editor, PrintNotice
+  screens/               Home, Editor, PrintNotice (the sheet at /a/<token>/print)
   live.ts                the album's socket: reconnecting, and into the store
-  printing.ts            the print job described for a reader, from shared data
-assets/fonts/            the OFL fonts the PDFs embed and the browser loads
 ```
 
 ### Decisions worth knowing about
 
-**A sticker is never resized.** It is a physical object 50 × 70 mm, so the
-sticker sheets are identical whatever size album they belong to, and a page
-that cannot fit nine of them gets four instead. Everything else on a page
-scales; this does not.
+**A sticker is never resized.** It is a physical 50 × 70 mm object, so sticker
+sheets are identical across album sizes and a page that cannot fit nine of them
+gets four. Everything else on a page scales; this does not.
 
-**Sticker numbers are never stored.** A slot's number is its position in reading
-order, recomputed on every read. Adding a page, deleting one or dragging a
-sticker somewhere else renumbers everything for free, and the number on screen
-cannot drift from the number that gets printed.
+**Sticker numbers are never stored.** A number is a slot's position in reading
+order, recomputed on every read, so adding a page, deleting one or dragging a
+sticker renumbers everything for free and the screen cannot drift from the print.
 
-**Every cover is data, like everything else.** A cover variant is a palette
-override plus four artwork functions, so the browser draws the picker chip, the
-live preview and the printed cover from one description. Adding a cover means
-adding an entry to `covers.ts` and nothing else.
+**Every cover is data.** A cover variant is a palette override plus four artwork
+functions; all 25 are built by `buildCover` from one skeleton — gradient sky,
+wash, texture, a scene along the bottom, one emblem at the top — which is why
+they look like a set. Adding a cover is one entry in `covers.ts`. The bands where
+the title plaque and the sticker count sit are left quiet, so artwork can never
+make a title harder to read.
 
-**Covers are composed, not drawn one at a time.** All 25 are built by
-`buildCover` from the same skeleton — gradient sky, soft wash, fine texture, a
-scene along the bottom, one bold emblem at the top — which is why they look
-like a set. The two bands where the title plaque and the sticker count sit are
-left deliberately quiet, so artwork can never make a title harder to read.
-
-**A cover photo is an ordinary album image.** Picking "my own" stores an image
-id on the album, so the upload, the token scoping, the EXIF stripping and the
-cleanup are all machinery that already existed. It is only kept at a higher
-resolution, because it fills a whole page rather than a 50 mm window.
+**A cover photo is an ordinary album image**, just kept at higher resolution —
+the upload, token scoping, EXIF stripping and cleanup are machinery that already
+existed.
 
 **Albums are reached by a secret link, not an account.** No sign-up for a child,
-no personal data, and it is the foundation the sharing feature needs. Photos are
-served through the same token, so an unshared link exposes nothing.
+no personal data; photos are served through the same token, so an unshared link
+exposes nothing. It is also the foundation the sharing feature needs.
 
-**A passport is a picture and a made-up name.** Children need telling apart —
-for an album list that survives a new device, and so a shared album can say who
-brought which sticker — but not with anything a child would have to remember or
-a grown-up would have to type. A passport is an avatar, a nickname and a random
-key the browser keeps; the server stores only the key's SHA-256. A new one
-arrives already called `Брзи Лав`, which is the privacy feature as much as the
-onboarding one: the easy path stops being "type your real name". The generator
-lives in [`nicknames.ts`](packages/shared/src/nicknames.ts) and is the one place
-in the app where translation is not enough — Serbian and Russian adjectives
-agree with the noun's gender, so each avatar records its gender per language
-and each adjective carries three forms.
+**The passport is asked for once, on the way in.** A genuinely first visit — no
+device key, no albums this browser remembers making — gets one screen before the
+album steps: a face and a name, both boxes pre-filled, so it costs one tap and
+the passport is minted on that tap rather than on arrival. It comes first because
+everything later (whose name goes on the cover, who brought which sticker) wants
+an answer that already exists. A child landing on a friend's invite link is asked
+the same two things on the join screen. Everywhere else the passport stays lazy: a
+child handed only an album link is never asked who they are.
+
+**A passport is a picture and a made-up name.** It is an avatar, a nickname and a
+random key the browser keeps; the server stores only the key's SHA-256. A new one
+arrives already named (e.g. `Брзи Лав`), so the easy path stops being "type your
+real name". Nicknames are the one place translation is not enough — Serbian and
+Russian adjectives agree with the noun's gender, so each avatar records a gender
+per language and each adjective carries three forms
+([`nicknames.ts`](packages/shared/src/nicknames.ts)).
 
 **Another device is added by showing it a QR, not by signing in.** The passport
 screen mints a six-character code that lives ten minutes and works once; the QR
 wraps it as an ordinary `/join/<code>` link, so the second device reads it with
-its own camera app and this app contains no scanner at all. The alphabet in
-[`codes.ts`](packages/shared/src/codes.ts) leaves out `0 1 I L O U`, so a code
-read correctly cannot be typed wrongly. Six characters is only safe because the
-code expires, works once, and sits behind a rate limiter — the per-code attempt
-counter cannot see a wrong guess, because a wrong guess matches no row.
+its own camera app — this app has no scanner. The alphabet in
+[`codes.ts`](packages/shared/src/codes.ts) leaves out `0 1 I L O U`. Six
+characters is safe only because the code expires, works once, and sits behind a
+rate limiter — a wrong guess matches no row, so the per-code counter never sees
+it.
 
 **Losing the only device loses the passport.** Pairing needs the first device
-working and present, and nothing else recovers an account — deliberately, since
-every alternative (an email, a password, a security question) is either personal
-data or something a six-year-old cannot do. The albums themselves survive: they
-are still reachable by their own secret links.
+working and present, and nothing else recovers an account — every alternative (an
+email, a password, a security question) is personal data or something a
+six-year-old cannot do. The albums survive: they are still reachable by their
+secret links.
 
 **Membership is a roster, not a lock.** Joining by invite writes an
-`album_members` row and hands over the album's edit token, which is what
-actually grants access. So the roster records who is here and puts a face on
-their stickers; it does not gate them, and removing someone cannot claw back a
-token they already hold. Real revocation needs album access to stop being the
-token — see "Not built yet".
+`album_members` row and hands over the album's edit token, which is what actually
+grants access. So the roster records who is here and puts a face on their
+stickers; it does not gate them, and removing someone cannot claw back a token
+they already hold. Real revocation needs album access to stop being the token —
+see "Not built yet".
 
 **The editor shows a spread, not a page.** A finished album is read two pages at
 a time, and the folded sheets decide which two: page 1 faces the inside of the
 cover, and every even page sits on the left of an odd one. `spreads()` in
-[`imposition.ts`](packages/shared/src/imposition.ts) states that rule once —
-page artwork already mirrored its corner motif on it — and the editor lays the
-two sheets out side by side accordingly, so nothing is ever judged out of the
-company it prints in. One of the two is the *active* page: the one the page
-strip selected, and the one renaming and deleting name.
+[`imposition.ts`](packages/shared/src/imposition.ts) states that rule once, and
+the editor lays the two sheets out side by side accordingly. One of the two is
+the *active* page — the one the page strip selected, and the one renaming and
+deleting act on.
 
-**A phone gets a different shape, not a smaller one.** The album is the awkward
-case: two A4 pages side by side on a 390 px screen leaves a sticker smaller than
-the finger that has to hit it. So on a phone the spread becomes a track that
-snaps — one page fills the screen, the facing one is a swipe away, and the page
-being edited and the page on screen are kept in step in both directions. The
-page is sized from the height left over rather than the width available, because
-a page as wide as the screen is one and a half screens tall and puts the page
-strip over the horizon. Everywhere else the same three moves: dialogs rise from
-the bottom edge as sheets with their title and their buttons pinned, the editor's
-rarer actions fold into one `⋯` menu, and the home screen grows a bar that
-follows the child down the page carrying the cover so far and the button that
-commits to it. Almost all of it is CSS; the three places that need different
-markup rather than a rearrangement of it share one breakpoint through
-`useMedia.ts`.
+**A phone gets a different shape, not a smaller one.** Two A4 pages side by side
+on a 390 px screen leave a sticker smaller than the finger that has to hit it. So
+on a phone the spread becomes a track that snaps — one page fills the screen, the
+facing one is a swipe away — sized from the height left over rather than the
+width. Everywhere else the same three moves: dialogs rise from the bottom edge as
+sheets, the editor's rarer actions fold into one `⋯` menu, and the home screen
+grows a bar that follows the child down the page carrying the cover so far.
+Almost all of it is CSS; the three places that need different markup share one
+breakpoint through `useMedia.ts`.
 
-**A finger drags differently from a mouse.** A mouse starts dragging a sticker on
-the eighth pixel, which on a touch screen would mean every attempt to scroll the
-album tore a sticker off the page instead. So the editor runs a `MouseSensor` and
+**A finger drags differently from a mouse.** The editor runs a `MouseSensor` and
 a `TouchSensor` rather than one `PointerSensor`: on a touch screen a sticker has
-to be held still for a moment before it lifts, and a swipe that starts on one
-scrolls the page as it should.
+to be held still for a moment before it lifts, so a swipe that starts on one
+scrolls the page instead of tearing a sticker off.
 
 **Every mutation returns the whole album.** It is a few kilobytes, and it means
 the editor never merges a partial response into local state.
 
-**Everybody else is told the same thing, over a socket.** An album is meant to
-be built by more than one child, so every mutation is also pushed to whoever
-else has it open — as the whole album, the same object the request was answered
-with. [`realtime.ts`](apps/server/src/realtime.ts) is a hub in the SignalR
-sense, hand-rolled over `@fastify/websocket` because it needs nothing a hub
-framework would bring: sockets are grouped by album, the group is broadcast to,
-and the client reconnects on its own. Nothing is *sent* over the socket — edits
-stay ordinary HTTP requests, where the validation, the errors and the "saving /
-saved" note already work — which is what makes a dropped connection dull: the
-album stops moving on its own, and nothing stops working.
+**Everybody else is told the same thing, over a socket.**
+[`realtime.ts`](apps/server/src/realtime.ts) is a hand-rolled hub over
+`@fastify/websocket`: sockets grouped by album, the group broadcast to, the
+client reconnecting on its own. Nothing is *sent* over the socket — edits stay
+ordinary HTTP requests, where validation and the "saving / saved" note already
+work — which is what makes a dropped connection dull: the album stops moving on
+its own, and nothing stops working. Three things make it safe:
 
-Three things make that safe rather than merely quick:
-
-- **A revision, on every album that crosses the wire.** The same change reaches
-  an editor twice — as the answer to its own request and as the push meant for
-  everyone else — and those can arrive in either order. Each reading carries the
-  revision it was taken at, and an editor ignores anything older than what it
-  already has. Revisions are seeded from the wall clock so they keep climbing
-  across a restart.
-- **The editor that caused a change is left out of it**, by naming its own
-  socket in an `x-nalepko-socket` header on the request.
+- **A revision on every album that crosses the wire.** The same change reaches an
+  editor twice — its own response, and the push for everyone else — in either
+  order. Each reading carries the revision it was taken at, and an editor ignores
+  anything older than what it has. Revisions are seeded from the wall clock, so
+  they keep climbing across a restart.
+- **The editor that caused a change is left out of it**, by naming its own socket
+  in an `x-nalepko-socket` header.
 - **The socket grants nothing.** It is opened with the album's edit token like
-  every other route, and says only what a `GET` of that album already would. The
-  passport it is greeted with buys a face in the roster, nothing more.
+  every other route and says only what a `GET` of that album already would.
 
-Presence rides along: the roster in the top bar is who has ever joined, and the
-ones who have the album open right now are lit. Both halves — the groups and the
-revisions — live in this one process's memory, which is exactly as far as the
-deployment goes; a second instance would need them somewhere both could see.
+Presence rides along: the roster is who has ever joined, and the ones who have
+the album open right now are lit. Both halves live in this one process's memory —
+a second instance would need them somewhere both could see.
 
 **Last writer wins, and that is the whole conflict story.** Two children on the
-same sticker is rare enough — the album is a grid of numbered places, and they
-naturally take different ones — that it is not worth a locking scheme a
-six-year-old would have to understand. The loser sees their change replaced,
-not merged.
+same sticker is rare enough — the album is a grid of numbered places — that it is
+not worth a locking scheme a six-year-old would have to understand. The loser
+sees their change replaced, not merged.
 
 **Uploads are normalised on arrival** — rotated upright from EXIF, stripped of
 metadata (phone photos carry GPS coordinates, and this is a children's app),
@@ -450,44 +376,37 @@ resized and re-encoded as JPEG.
 
 **A picture can be found, not only owned.** A child who wants a lion has no
 photograph of one, so an empty sticker offers a third way in beside the drag and
-the camera: press the microphone, say `лав`, and pick one off a shelf. The
-speech is the browser's own — no key, nothing added to the image — and the shelf
-comes from a provider behind a seam (see *Finding pictures* under Deploying).
+the camera: press the microphone, say `лав`, and pick one off a shelf. The speech
+is the browser's own — no key, nothing added to the image — and the shelf comes
+from a provider behind a seam (see *Finding pictures*). The way in is per device:
+a desktop keeps the drop zone, a phone gets **Take a photo** and **From your
+photos** as two buttons, because `capture` is the difference between opening the
+camera and opening the camera roll and one attribute cannot be both.
 
-The way in matters per device, which is the same argument the rest of the phone
-layout makes. A desktop keeps the drop zone it always had; a phone, which has
-nothing to drag and no mouse to drag it with, gets `Сликај` and `Из галерије` as
-two buttons, because `capture` is the difference between opening the camera and
-opening the camera roll and one attribute cannot be both.
-
-**A found picture is never fetched by address.** A search result carries a
-`pick` — the address, signed by this process, good for fifteen minutes — and the
-fetch route will only go and get a picture for a `pick` it signed itself. "Fetch
-this URL for me" is not something this server offers to anybody, which is what
-keeps a picture search from being an open proxy into its own network. The fetch
-behind it is `remotefetch.ts`: https only, every resolved address checked
-against the private ranges *and the socket pinned to the address that was
-checked* (resolving twice is the DNS-rebinding hole), redirects followed by hand
-through the same checks, and the read abandoned the moment it passes the cap.
-From the row it writes onward a found picture is exactly an uploaded one — same
-normalising, same stripping, same file.
+**A found picture is never fetched by address.** A search result carries a `pick`
+— the address, signed by this process, good for fifteen minutes — and the fetch
+route will only go and get a picture for a `pick` it signed itself. The fetch
+behind it ([`remotefetch.ts`](apps/server/src/remotefetch.ts)) is https only,
+checks every resolved address against the private ranges *and pins the socket to
+the address that was checked* (resolving twice is the DNS-rebinding hole),
+follows redirects by hand through the same checks, and abandons the read at the
+byte cap. From the row it writes onward, a found picture is exactly an uploaded
+one.
 
 **Artwork is deterministic.** Decorations are scattered from a seeded PRNG rather
 than `Math.random`, so the browser and the PDF scatter them identically.
 
 **Gradients are stacks of bands.** `pdf-lib` has no gradient, so `gradientBands`
 lays down thin rectangles, each running to the far edge so it completely covers
-the one before it. Bands that merely abut show a hairline seam wherever a
-renderer antialiases their shared edge, which is visible as banding across a
-full-bleed cover in both SVG and PDF.
+the one before. Bands that merely abut show a hairline seam wherever a renderer
+antialiases their shared edge.
 
 ### Fonts
 
-`assets/fonts` holds static instances of Nunito and Comfortaa, generated from the
-upstream variable fonts and verified to cover Serbian Cyrillic including
-`Ђ Ј Љ Њ Ћ Џ`, plus the rest of Russian Cyrillic (`Ё Ъ Ы Э Ю` and friends). The
-PDF base-14 fonts have no Cyrillic at all — miss this and text silently prints
-blank. Both licences are in the same directory (SIL OFL).
+`assets/fonts` holds static instances of Nunito and Comfortaa (SIL OFL),
+generated from the upstream variable fonts to cover Serbian Cyrillic
+(`Ђ Ј Љ Њ Ћ Џ`) and the rest of Russian Cyrillic (`Ё Ъ Ы Э Ю`). The PDF base-14
+fonts have no Cyrillic at all — miss this and text silently prints blank.
 
 ---
 
@@ -495,32 +414,26 @@ blank. Both licences are in the same directory (SIL OFL).
 
 Sharing is the reason this app has a server rather than running entirely in the
 browser. Children have passports, invites put friends on an album's roster, a
-sticker remembers who brought it, and edits now arrive while you watch, with the
-faces of whoever else is in the album lit up beside them.
+sticker remembers who brought it, and edits arrive while you watch, with the
+faces of whoever else is in the album lit up beside them. What the live half
+still stops short of:
 
-What the live half still stops short of:
-
-- **It is one process's memory.** Groups and revisions are held in the server
-  that owns them, so a second instance would see none of the first one's
-  sockets. Getting there is a message bus and a shared revision, not a rewrite.
-- **Nothing is shown mid-edit.** A change appears when it is saved; there is no
-  cursor, no "typing", and no sign that somebody else is holding the sticker you
-  are about to take.
+- **It is one process's memory.** A second instance would see none of the first
+  one's sockets — getting there is a message bus and a shared revision, not a
+  rewrite.
+- **Nothing is shown mid-edit** — no cursor, no "typing", no sign that somebody
+  else is holding the sticker you are about to take.
 - **Last writer wins**, with no merge and no undo of somebody else's overwrite.
-
-Picture search has a gap of its own: **nothing translates the query**. A child
-searching in Serbian is searching a mostly English index unless the deployment
-has Google keys, and neither provider is asked in more than one language at a
-time.
+- **Nothing translates the query.** A child searching in Serbian searches a
+  mostly English index unless the deployment has Google keys.
 
 Three more things the passport layer stops short of, in the order they matter:
 
-- **Album access is still the token.** Making the device key the credential —
-  and demoting the token to one kind of invite — is what would let an owner
-  actually remove a member, and would stop the secret appearing in every
-  `<img src>` and in browser history. The tables are shaped so this is a
-  migration rather than a rewrite.
-- **A printable passport card.** One page with the avatar, the nickname and a
-  recovery QR, for the parent to keep. It is the answer to the lost-device gap
-  above, and a natural fit for an app that already prints PDFs.
+- **Album access is still the token.** Making the device key the credential — and
+  demoting the token to one kind of invite — is what would let an owner actually
+  remove a member, and would keep the secret out of every `<img src>` and browser
+  history. The tables are shaped so this is a migration, not a rewrite.
+- **A printable passport card** — one page with the avatar, the nickname and a
+  recovery QR, for the parent to keep. It answers the lost-device gap and is a
+  natural fit for an app that already prints PDFs.
 - **Editor and viewer roles**, and revoking an invite before it expires.

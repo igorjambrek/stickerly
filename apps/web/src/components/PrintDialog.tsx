@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { PartPrintInfo, Template } from '@album/shared';
+import type { Lang, PartPrintInfo, Template } from '@album/shared';
 import { printShopNote } from '@album/shared';
 import { api, type PrintSummary } from '../api.ts';
 import { useT } from '../lang.ts';
@@ -29,6 +29,8 @@ export interface PrintDialogProps {
   token: string;
   /** The album's name: the downloads are named after it, and so is the note. */
   title: string;
+  /** The album's language: the download filenames say which PDF is which in it. */
+  lang: Lang;
   template: Template;
   onClose: () => void;
 }
@@ -53,7 +55,7 @@ function PartRow({ info, href, accent }: { info: PartPrintInfo; href: string; ac
   );
 }
 
-export function PrintDialog({ token, title, template, onClose }: PrintDialogProps) {
+export function PrintDialog({ token, title, lang, template, onClose }: PrintDialogProps) {
   const t = useT();
   const [summary, setSummary] = useState<PrintSummary | null>(null);
   const [failed, setFailed] = useState(false);
@@ -78,7 +80,7 @@ export function PrintDialog({ token, title, template, onClose }: PrintDialogProp
   }, [copied]);
 
   const accent = template.palette.badge;
-  const parts = summary ? printParts(t, summary, title) : [];
+  const parts = summary ? printParts(t, summary, title, lang) : [];
   const shopNote = printShopNote(t, parts);
 
   const copy = async (what: 'note' | 'link', text: string) => {

@@ -87,7 +87,10 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
   return (
     <div className="picsearch">
       <div className="picsearch__ask">
-        {voice.supported && (
+        {/* Voice search temporarily disabled until it's fixed: the microphone
+            button is commented out so the speech path cannot be started. The
+            typed box below is the only way in for now. */}
+        {/* {voice.supported && (
           <button
             type="button"
             className={`picsearch__mic${voice.listening ? ' picsearch__mic--on' : ''}`}
@@ -98,7 +101,7 @@ export function PictureSearch({ token, lang, role = 'sticker', onPicked, onBack 
           >
             {voice.listening ? '🔴' : '🎤'}
           </button>
-        )}
+        )} */}
 
         <input
           className="field picsearch__field"

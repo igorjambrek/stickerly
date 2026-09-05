@@ -45,6 +45,18 @@ node --import tsx --test --test-name-pattern "imposition" apps/server/test/print
 
 There is no lint script configured; `npm run typecheck` is the correctness gate besides tests.
 
+Two kinds of test file live in `apps/server/test`. Most take one module or one
+group of routes and stub the neighbours. Two do not:
+[journeys.test.ts](apps/server/test/journeys.test.ts) walks a whole album from
+creation to three PDFs, and a friend into it by invite, over real HTTP and a
+real socket; [deployment.test.ts](apps/server/test/deployment.test.ts) boots the
+app on a file-backed database, restarts it onto the same directory, and serves
+the built frontend. Their harness — a listening app, a browser holding one
+child's passport and socket, a live client — is
+[apps/server/test/helpers](apps/server/test/helpers); reuse it rather than
+opening sockets by hand. Both run in `npm test`, and CI runs `typecheck`, the
+tests and the frontend build on every pull request.
+
 ## Architecture
 
 **The one rule everything follows: editor and PDF generator must agree on
@@ -74,6 +86,7 @@ Other load-bearing decisions (don't relitigate these without reading
 - **A cover is data**: a palette override + four artwork functions in `packages/shared/src/covers.ts`; `buildCover` composes all 25 from one skeleton (gradient sky, wash, texture, scene, emblem). Adding a cover = one entry there.
 - **Albums are reached by secret link, not account** — `apps/server/src/repo.ts` scopes all SQLite access by an album's secret token; photos are served through the same token.
 - **Passports are a layer on top, never a gate** — a person is an avatar plus a generated nickname, authenticated by a device key hashed into `devices` and sent as the `x-nalepko-device` header. `req.person` is resolved for every request and required by almost none: album routes read it only to record who did something, so an anonymous child with a link still works. Identity lives in `apps/server/src/identity.ts`; `album_members` stays with the album data in `repo.ts`.
+- **The passport is asked for before the first album, and pre-filled** — a genuinely first visit to `/` (no device key, no albums this browser remembers) gets `screens/Welcome.tsx` instead of the album steps, and an invite link asks the same two things on the join screen. Both come with a face and a name already chosen, so either costs one tap, and both mint on that tap rather than on arrival — a bare page view still creates nobody. `components/PassportForm.tsx` is that form in all three places it appears; the passport screen is the third, and the only one that saves as it goes rather than holding a draft.
 - **Nicknames are generated, and gendered** — `packages/shared/src/nicknames.ts` puts an adjective in front of the avatar's own noun, and Serbian/Russian adjectives must agree with that noun's gender, so avatars carry a gender per language and adjectives carry three forms. Never generate one from `rng.ts` (seeded, for artwork); the caller supplies real entropy.
 - **A second device is added by QR, and this app has no scanner** — the QR holds an ordinary `/join/<code>` link that the other device's camera app opens. Codes (`packages/shared/src/codes.ts`) are six characters from an alphabet with no look-alikes, single-use, ten minutes, and safe only because of the rate limiter in `apps/server/src/ratelimit.ts`.
 - **Every mutation endpoint returns the whole album** — the editor never merges partial responses into local state.
@@ -115,13 +128,16 @@ apps/web/src/
                   LangSwitch        the four languages, named or abbreviated
                   Presence          the roster, with whoever is here right now lit
                   PictureSearch     the microphone, the shelf, and the credits
+                  PassportForm      a face and a name, and when they are written down
   live.ts         the album's socket: reconnect, catch up, write to the store
   voice.ts        the browser's speech recognition, and whether there is any
   features.ts     what this server can do, asked once
   useMedia.ts     the one breakpoint the components and the stylesheet share
-  screens/        Home (four choices, live preview), Editor, PrintNotice
-                  (the print-shop sheet at /a/<token>/print), Passport (/me),
-                  Join (/join/<code> from your own device, /i/<code> from a friend)
+  screens/        Home (four choices, live preview), Welcome (who are you, on
+                  a first visit; rendered by Home, not routed to), Editor,
+                  PrintNotice (the print-shop sheet at /a/<token>/print),
+                  Passport (/me), Join (/join/<code> from your own device,
+                  /i/<code> from a friend)
   identity.ts     the passport store; deviceKey.ts is its localStorage half
 ```
 

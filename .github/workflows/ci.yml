@@ -1,0 +1,71 @@
+name: CI
+
+# Every pull request is tested, every push to main is tested, and only a push
+# to main goes on to deploy to the OCI instance — see the `if` on that job.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One run at a time on main: a newer push waits for the current deploy to
+# finish rather than cancelling it part-way through an SSH session. A pull
+# request has no deploy to interrupt, so each one gets a group of its own and a
+# new commit cancels the run its predecessor is still doing.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.number) || 'ci-main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22 # matches "engines": { "node": ">=22" }
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      # The editor is built on the instance by the Docker build, which is a
+      # long way to travel to find out that it does not compile.
+      - run: npm run build
+
+  deploy:
+    needs: test
+    # Pull requests stop at the tests: a branch nobody has merged must not be
+    # what the site is serving.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check required secrets
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          : "${DEPLOY_HOST:?set the DEPLOY_HOST secret to the instance's public IP}"
+          : "${DEPLOY_SSH_KEY:?set the DEPLOY_SSH_KEY secret to the nalepko_oci private key}"
+
+      - name: Install the deploy SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$RUNNER_TEMP/nalepko_oci"
+          chmod 600 "$RUNNER_TEMP/nalepko_oci"
+
+      # infra/oci/deploy.sh reads IP (skipping the terraform lookup), KEY, and
+      # SITE_ADDRESS / API_ADDRESS. Empty address vars fall back to the script's
+      # own defaults (nalepko.jambrek.com / api.nalepko.jambrek.com).
+      - name: Deploy to OCI
+        env:
+          IP: ${{ secrets.DEPLOY_HOST }}
+          KEY: ${{ runner.temp }}/nalepko_oci
+          SITE_ADDRESS: ${{ vars.SITE_ADDRESS }}
+          API_ADDRESS: ${{ vars.API_ADDRESS }}
+        run: bash infra/oci/deploy.sh

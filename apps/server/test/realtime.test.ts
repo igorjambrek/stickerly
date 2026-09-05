@@ -15,10 +15,11 @@ import path from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import type { AddressInfo } from 'node:net';
 import type { FastifyInstance } from 'fastify';
-import type { Album, LiveServerMessage } from '@album/shared';
-import { LIVE_CLOSE_GONE, SOCKET_HEADER, livePath } from '@album/shared';
+import type { Album } from '@album/shared';
+import { LIVE_CLOSE_GONE, SOCKET_HEADER } from '@album/shared';
 import { createApp } from '../src/app.ts';
 import { createTestDb } from '../src/db/index.ts';
+import { LiveClient } from './helpers/live.ts';
 
 let app: FastifyInstance;
 let base: string;
@@ -41,91 +42,14 @@ after(async () => {
   delete process.env.DATA_DIR;
 });
 
-type Message<T extends LiveServerMessage['t']> = Extract<LiveServerMessage, { t: T }>;
-
-/** One editor, as far as the server is concerned. */
-class Client {
-  private readonly queue: LiveServerMessage[] = [];
-  private waiting: { type: LiveServerMessage['t']; resolve: (m: never) => void } | null = null;
-  /**
-   * The close, watched from the moment the socket exists. A server that turns a
-   * connection away does it faster than a test can ask about it afterwards, so
-   * this cannot be a listener attached on demand.
-   */
-  private readonly closed: Promise<number>;
-  /** The connection id the server gave us, once `welcome` has been read. */
-  id = '';
-
-  private constructor(private readonly socket: WebSocket) {
-    this.closed = new Promise((resolve) =>
-      socket.addEventListener('close', (event) => resolve(event.code), { once: true }),
-    );
-    socket.addEventListener('message', (event) => {
-      const message = JSON.parse(String(event.data)) as LiveServerMessage;
-      if (this.waiting?.type === message.t) {
-        const { resolve } = this.waiting;
-        this.waiting = null;
-        resolve(message as never);
-        return;
-      }
-      this.queue.push(message);
-    });
-  }
-
-  static async open(token: string): Promise<Client> {
-    const socket = new WebSocket(`${wsBase}${livePath(token)}`);
-    const client = new Client(socket);
-    await new Promise<void>((resolve, reject) => {
-      socket.addEventListener('open', () => resolve(), { once: true });
-      socket.addEventListener('error', () => reject(new Error('could not connect')), { once: true });
-    });
-    return client;
-  }
-
-  /** Opened, greeted, and ready to be told about other people's edits. */
-  static async ready(token: string, deviceKey?: string): Promise<Client> {
-    const client = await Client.open(token);
-    client.id = (await client.next('welcome')).id;
-    client.socket.send(JSON.stringify(deviceKey ? { t: 'hello', deviceKey } : { t: 'hello' }));
-    return client;
-  }
-
-  next<T extends LiveServerMessage['t']>(type: T, ms = 3000): Promise<Message<T>> {
-    const found = this.queue.findIndex((m) => m.t === type);
-    if (found >= 0) return Promise.resolve(this.queue.splice(found, 1)[0] as Message<T>);
-
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.waiting = null;
-        reject(new Error(`no '${type}' message within ${ms}ms`));
-      }, ms);
-      this.waiting = {
-        type,
-        resolve: ((m: Message<T>) => {
-          clearTimeout(timer);
-          resolve(m);
-        }) as (m: never) => void,
-      };
-    });
-  }
-
-  /** Nothing at all for a moment — which is the whole point of the exclusion header. */
-  async hearsNothing(ms = 300): Promise<void> {
-    await new Promise((r) => setTimeout(r, ms));
-    assert.deepEqual(this.queue, [], 'expected this socket to be left out');
-  }
-
-  closeCode(ms = 3000): Promise<number> {
-    const late = new Promise<number>((_, reject) =>
-      setTimeout(() => reject(new Error(`the socket was still open after ${ms}ms`)), ms).unref(),
-    );
-    return Promise.race([this.closed, late]);
-  }
-
-  close(): void {
-    this.socket.close();
-  }
-}
+/**
+ * The socket client lives in `helpers/live.ts`, because the journeys use it
+ * too; bound to this file's port so every test below reads as it always did.
+ */
+const Client = {
+  open: (token: string) => LiveClient.open(wsBase, token),
+  ready: (token: string, deviceKey?: string) => LiveClient.ready(wsBase, token, deviceKey),
+};
 
 const json = async (res: Response) => {
   assert.ok(res.ok, `${res.status} ${res.url}: ${await res.clone().text()}`);

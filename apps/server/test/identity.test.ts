@@ -299,14 +299,17 @@ describe('adopting the albums a browser already had', () => {
   it('makes a device-local list into one a child can carry', async () => {
     // An album made before this child had a passport, as every existing one was.
     const { token } = await newAlbum();
-    const { deviceKey } = await newPassport();
+    const { person, deviceKey } = await newPassport();
 
     const claimed = (await json(
       await call('POST', '/api/me/albums/claim', deviceKey, { tokens: [token, 'no-such-token'] }),
-    )) as { claimed: number; albums: { editToken: string; role: string }[] };
+    )) as { claimed: number; person: Person; albums: { editToken: string; role: string }[] };
 
     assert.equal(claimed.claimed, 1, 'a token that matches nothing is skipped, not an error');
     assert.deepEqual(claimed.albums.map((a) => [a.editToken, a.role]), [[token, 'owner']]);
+    // This is the whole of what the browser asks on the load that upgrades it,
+    // so it answers everything `/api/me` would have: who, as well as what.
+    assert.deepEqual(claimed.person, person);
   });
 
   it('does not take an album that already belongs to someone', async () => {

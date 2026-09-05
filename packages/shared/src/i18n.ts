@@ -210,6 +210,11 @@ const srCyrl: Messages = {
   'pdf.foldHint': 'пресавиј овде',
   'pdf.copyright': '© {year} Nalepko',
 
+  'onboarding.title': 'Ко си ти?',
+  'onboarding.hint': 'Изабери сличицу и име. Обоје можеш да промениш кад год хоћеш.',
+  'onboarding.go': 'То сам ја!',
+  'onboarding.why': 'Пасош чува твоје албуме на једном месту и можеш да га пренесеш на други уређај.',
+
   'passport.title': 'Твој пасош',
   'passport.open': 'Мој пасош',
   'passport.nickname': 'Твоје име',
@@ -434,6 +439,11 @@ const srLatn: Messages = {
   'pdf.totalStickers': 'Ukupno nalepnica:',
   'pdf.foldHint': 'presavij ovde',
   'pdf.copyright': '© {year} Nalepko',
+
+  'onboarding.title': 'Ko si ti?',
+  'onboarding.hint': 'Izaberi sličicu i ime. Oboje možeš da promeniš kad god hoćeš.',
+  'onboarding.go': 'To sam ja!',
+  'onboarding.why': 'Pasoš čuva tvoje albume na jednom mestu i možeš da ga preneseš na drugi uređaj.',
 
   'passport.title': 'Tvoj pasoš',
   'passport.open': 'Moj pasoš',
@@ -660,6 +670,11 @@ const en: Messages = {
   'pdf.foldHint': 'fold here',
   'pdf.copyright': '© {year} Nalepko',
 
+  'onboarding.title': 'Who are you?',
+  'onboarding.hint': 'Pick a picture and a name. You can change both whenever you like.',
+  'onboarding.go': "That's me!",
+  'onboarding.why': 'Your passport keeps your albums together, and you can carry it to another device.',
+
   'passport.title': 'Your passport',
   'passport.open': 'My passport',
   'passport.nickname': 'Your name',
@@ -884,6 +899,11 @@ const ru: Messages = {
   'pdf.totalStickers': 'Всего наклеек:',
   'pdf.foldHint': 'сложить здесь',
   'pdf.copyright': '© {year} Nalepko',
+
+  'onboarding.title': 'Кто ты?',
+  'onboarding.hint': 'Выбери картинку и имя. И то и другое можно поменять когда захочешь.',
+  'onboarding.go': 'Это я!',
+  'onboarding.why': 'Паспорт хранит твои альбомы вместе, и его можно перенести на другое устройство.',
 
   'passport.title': 'Твой паспорт',
   'passport.open': 'Мой паспорт',

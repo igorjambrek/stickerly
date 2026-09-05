@@ -20,7 +20,7 @@
  * (on a touch screen, by pressing one until it lifts), and the numbers follow.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   MouseSensor,
@@ -92,6 +92,8 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
   /** Where a scroll we started ourselves is heading, so we do not read it back. */
   const settling = useRef<number | null>(null);
   const positioned = useRef(false);
+  /** Which spread the track was last put on: a turn jumps, a swipe glides. */
+  const staged = useRef(0);
 
   // Keyed by the token alone: the store instance is stable for the session.
   useEffect(() => {
@@ -128,6 +130,19 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
   const halves: (number | null)[] = [spread.left, spread.right];
   const activeHalf = Math.max(0, halves.indexOf(activeNumber));
 
+  /*
+   * Which way the child has just turned, so the pages can come in the way the
+   * paper would move. Read while rendering rather than in an effect: an effect
+   * would paint the new spread once, sitting still, before anything could
+   * start moving it.
+   */
+  const seenSpread = useRef(spread.index);
+  const lastTurn = useRef<'forward' | 'back'>('forward');
+  if (seenSpread.current !== spread.index) {
+    lastTurn.current = spread.index > seenSpread.current ? 'forward' : 'back';
+    seenSpread.current = spread.index;
+  }
+
   /**
    * The swiped half and the selected page are the same fact seen twice. This
    * half of the loop moves the strip's choice onto the screen; `onStageScroll`
@@ -137,14 +152,21 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
    * and reading it back mid-flight would drag the album straight home again —
    * so the destination is remembered until it is reached, or until it is
    * plainly not going to be.
+   *
+   * Only a move between the halves of one spread glides. A turn has motion of
+   * its own — the page falling shut, below — so the track is simply put where
+   * it belongs, before the frame that would otherwise show the wrong half of
+   * a spread that has already changed underneath it.
    */
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = stage.current;
     if (!phone || !el) return;
+    const turned = staged.current !== spread.index;
+    staged.current = spread.index;
     const target = activeHalf * el.clientWidth;
     if (Math.abs(el.scrollLeft - target) <= 4) return;
     settling.current = target;
-    el.scrollTo({ left: target, behavior: positioned.current ? 'smooth' : 'auto' });
+    el.scrollTo({ left: target, behavior: positioned.current && !turned ? 'smooth' : 'auto' });
     positioned.current = true;
     const giveUp = window.setTimeout(() => (settling.current = null), 600);
     return () => window.clearTimeout(giveUp);
@@ -173,6 +195,13 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
   if (!album || !activePage) return <div className="center-note">{t('editor.saving')}</div>;
 
   const pageAt = (number: number): Page | undefined => pages.find((p) => p.position === number - 1);
+  /*
+   * A leaf turns onto the left page when the child goes forward and onto the
+   * right one when they go back; the other half of the spread was underneath
+   * it the whole time and is merely uncovered. The stylesheet moves them.
+   */
+  const leafRole = (side: 'left' | 'right') =>
+    (lastTurn.current === 'forward') === (side === 'left') ? 'turn' : 'uncover';
   const shownPages = halves.filter((n) => n !== null).length;
   const openSlot = pages.flatMap((p) => p.slots).find((s) => s.id === openSlotId) ?? null;
 
@@ -419,9 +448,19 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
             ref={stage}
             onScroll={onStageScroll}
           >
-            <div className="spread__half">{half(spread.left, 'left')}</div>
+            {/* Keyed by the spread: a turn hands the browser a new element, so the
+                animation runs again even when the child turns the same way twice. */}
+            <div className="spread__half">
+              <div className="spread__leaf" key={spread.index} data-leaf={leafRole('left')}>
+                {half(spread.left, 'left')}
+              </div>
+            </div>
             <span className="spread__spine" aria-hidden="true" />
-            <div className="spread__half">{half(spread.right, 'right')}</div>
+            <div className="spread__half">
+              <div className="spread__leaf" key={spread.index} data-leaf={leafRole('right')}>
+                {half(spread.right, 'right')}
+              </div>
+            </div>
           </div>
         </div>
       </DndContext>
@@ -576,7 +615,13 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
       )}
 
       {printing && (
-        <PrintDialog token={token} title={album.title} template={template} onClose={() => setPrinting(false)} />
+        <PrintDialog
+          token={token}
+          title={album.title}
+          lang={album.lang}
+          template={template}
+          onClose={() => setPrinting(false)}
+        />
       )}
       {toast && <div className="toast">{toast}</div>}
     </div>

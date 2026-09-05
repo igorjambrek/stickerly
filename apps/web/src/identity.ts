@@ -1,10 +1,11 @@
 /**
  * Who this child is, as far as the app is concerned.
  *
- * A passport is created lazily — on making an album, opening the passport
- * screen or claiming a code, never on a bare page view — so a passing crawler
- * mints nothing, and a child who only ever follows a link never becomes an
- * account they did not ask for.
+ * A passport is created on a deliberate tap — the welcome screen's button on a
+ * first visit, making an album, opening the passport screen, claiming a code —
+ * and never on a bare page view, so a passing crawler mints nothing and a child
+ * who only ever follows a link into an album never becomes an account they did
+ * not ask for.
  *
  * Nothing here is allowed to break the app. Every failure path ends with no
  * passport and an editor that works exactly as it did before, because album
@@ -45,9 +46,9 @@ interface IdentityState {
   checked: boolean;
 
   load: () => Promise<void>;
-  ensure: (lang: Lang, seed?: { nickname?: string }) => Promise<Person>;
+  ensure: (lang: Lang, seed?: { nickname?: string; avatar?: string }) => Promise<Person>;
   update: (patch: { nickname?: string; avatar?: string }, lang: Lang) => Promise<void>;
-  adopt: (passport: Passport) => void;
+  adopt: (passport: Passport, opts?: { fresh?: boolean }) => void;
 }
 
 export const useIdentity = create<IdentityState>((set, get) => ({
@@ -82,8 +83,13 @@ export const useIdentity = create<IdentityState>((set, get) => ({
     if (existing) return existing;
 
     const nickname = seed?.nickname?.trim();
-    const passport = await api.createPerson({ lang, ...(nickname ? { nickname } : {}) });
-    get().adopt(passport);
+    const passport = await api.createPerson({
+      lang,
+      ...(nickname ? { nickname } : {}),
+      ...(seed?.avatar ? { avatar: seed.avatar } : {}),
+    });
+    // Brand new, on this very browser: whatever it already made is this child's.
+    get().adopt(passport, { fresh: true });
     return passport.person;
   },
 
@@ -92,12 +98,16 @@ export const useIdentity = create<IdentityState>((set, get) => ({
     set({ person });
   },
 
-  /** A brand new passport, or one that just arrived from another device. */
-  adopt(passport) {
+  /**
+   * A brand new passport, or one that just arrived from another device. Only
+   * the first has any claim on the albums this browser remembers making: a
+   * passport claimed from another device already knows its own, and sweeping up
+   * whatever is lying around on a borrowed tablet is not what that gesture
+   * meant.
+   */
+  adopt(passport, opts) {
     writeDeviceKey(passport.deviceKey);
-    // A passport claimed from another device already knows its albums; this
-    // browser's local list is not part of that story, so the claim is done.
-    writeFlag(CLAIMED_KEY);
+    if (!opts?.fresh) writeFlag(CLAIMED_KEY);
     set({ person: passport.person, checked: true });
     void get().load();
   },
