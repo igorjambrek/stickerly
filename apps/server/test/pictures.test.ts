@@ -21,7 +21,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Album, PictureSearch } from '@album/shared';
 import { createApp } from '../src/app.ts';
 import { createTestDb } from '../src/db/index.ts';
-import { createPictures } from '../src/pictures.ts';
+import { createPictures, wikimediaThumb } from '../src/pictures.ts';
 import { fetchPicture, isPublicAddress } from '../src/remotefetch.ts';
 
 const FETCH = { maxBytes: 1024, timeoutMs: 2000, userAgent: 'test' };
@@ -62,6 +62,59 @@ describe('which addresses may be fetched', () => {
   it('keeps 172.15 and 172.32 public, either side of the private block', () => {
     assert.equal(isPublicAddress('172.15.0.1'), true);
     assert.equal(isPublicAddress('172.32.0.1'), true);
+  });
+});
+
+/**
+ * The thumbnail the grid paints, which is not the picture and not the
+ * provider's idea of a thumbnail either.
+ *
+ * Openverse's own resizing proxy answers 424 for every Wikimedia-hosted result,
+ * so those are asked of Wikimedia directly. That makes this string transform
+ * the difference between a shelf of photographs and a shelf of grey squares,
+ * which is worth a table rather than an example.
+ */
+describe('deriving a thumbnail we can paint', () => {
+  it('turns a Commons file into a sized request Wikimedia answers', () => {
+    assert.equal(
+      wikimediaThumb('https://upload.wikimedia.org/wikipedia/commons/1/13/Lamine_Yamal.jpg'),
+      'https://commons.wikimedia.org/wiki/Special:FilePath/Lamine_Yamal.jpg?width=400',
+    );
+  });
+
+  it('names the wiki that holds the file, when it is not Commons', () => {
+    assert.equal(
+      wikimediaThumb('https://upload.wikimedia.org/wikipedia/en/a/ab/Poster.jpg'),
+      'https://en.wikipedia.org/wiki/Special:FilePath/Poster.jpg?width=400',
+    );
+  });
+
+  /** A path that is already a thumbnail names the original one segment earlier;
+   *  taking the last segment would ask for a thumbnail of a thumbnail. */
+  it('finds the original behind an address that is already a thumbnail', () => {
+    assert.equal(
+      wikimediaThumb('https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/Lion.jpg/800px-Lion.jpg'),
+      'https://commons.wikimedia.org/wiki/Special:FilePath/Lion.jpg?width=400',
+    );
+  });
+
+  it('keeps the encoding a name arrived with', () => {
+    assert.equal(
+      wikimediaThumb('https://upload.wikimedia.org/wikipedia/commons/2/2f/Beli_lav_%28zoo%29.JPG'),
+      'https://commons.wikimedia.org/wiki/Special:FilePath/Beli_lav_%28zoo%29.JPG?width=400',
+    );
+  });
+
+  it('has nothing to say about anywhere else', () => {
+    for (const url of [
+      'https://live.staticflickr.com/65535/123_b.jpg',
+      'https://example.com/lion.jpg',
+      'https://upload.wikimedia.org/wikipedia/commons/short.jpg',
+      'not a url',
+      '',
+    ]) {
+      assert.equal(wikimediaThumb(url), '', url);
+    }
   });
 });
 
@@ -135,10 +188,11 @@ describe('picks', () => {
 
   it('describes what it found, licence and all', async () => {
     const pictures = createPictures();
-    const results = await pictures.search('лав', 'sr-Cyrl');
+    const { results } = await pictures.search('лав', 'sr-Cyrl');
 
     assert.equal(results.length, 2);
     assert.equal(results[0]!.title, 'A lion');
+    // Not a Wikimedia host, so the provider's own thumbnail is what there is.
     assert.equal(results[0]!.thumbUrl, 'https://pictures.example.com/lion-small.jpg');
     assert.equal(results[0]!.source, 'Ана');
     assert.equal(results[0]!.licence, 'CC BY 4.0');
@@ -147,19 +201,19 @@ describe('picks', () => {
   });
 
   it('never puts the address it found in front of the browser', async () => {
-    const results = await createPictures().search('лав', 'en');
+    const { results } = await createPictures().search('лав', 'en');
     assert.ok(!JSON.stringify(results).includes('/lion.jpg'), 'the full address leaked into the results');
   });
 
   it('opens a pick it signed itself', async () => {
     const pictures = createPictures();
-    const results = await pictures.search('лав', 'en');
+    const { results } = await pictures.search('лав', 'en');
     assert.equal(pictures.open(results[0]!.pick), 'https://pictures.example.com/lion.jpg');
   });
 
   it('refuses a pick that has been tampered with', async () => {
     const pictures = createPictures();
-    const [hit] = await pictures.search('лав', 'en');
+    const [hit] = (await pictures.search('лав', 'en')).results;
     const [payload, signature] = hit!.pick.split('.');
 
     const forged = Buffer.from(
@@ -182,11 +236,168 @@ describe('picks', () => {
     Date.now = () => realNow() - 60 * 60 * 1000;
     let stale;
     try {
-      [stale] = await pictures.search('лав', 'en');
+      [stale] = (await pictures.search('лав', 'en')).results;
     } finally {
       Date.now = realNow;
     }
     assert.throws(() => pictures.open(stale!.pick), /no longer on offer/);
+  });
+});
+
+/**
+ * A name said out loud, and spelled the way it sounded.
+ *
+ * This is the whole reason `entities.ts` exists: a Serbian recogniser writes
+ * `lamin Jamal` for the footballer Lamine Yamal, an index of English titles has
+ * never heard of him under that spelling, and the child who said the right name
+ * gets an empty shelf. Everything below is stubbed, because the point under test
+ * is when we go and ask and what we do with the answer — not whether Wikipedia
+ * is up.
+ */
+describe('a name that was spelled the way it sounded', () => {
+  const SPOKEN = 'lamin Jamal';
+  const CANONICAL = 'Lamine Yamal';
+
+  /** Openverse knows the name in English only; Wikipedia bridges the two. */
+  function stubTheWholeChain(): { openverseQueries: string[] } {
+    const openverseQueries: string[] = [];
+
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+
+      if (url.startsWith('https://api.openverse.org/')) {
+        const q = new URL(url).searchParams.get('q') ?? '';
+        openverseQueries.push(q);
+        return json(q === CANONICAL ? OPENVERSE_ANSWER : { results: [] });
+      }
+      if (url.startsWith('https://sr.wikipedia.org/')) {
+        return json({ query: { pages: { '1': { title: 'Ламин Јамал', pageprops: { wikibase_item: 'Q1' } } } } });
+      }
+      if (url.startsWith('https://www.wikidata.org/')) {
+        return json({ entities: { Q1: { sitelinks: { enwiki: { title: CANONICAL } } } } });
+      }
+      throw new Error(`unexpected call to ${url}`);
+    }) as typeof fetch;
+
+    return { openverseQueries };
+  }
+
+  after(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it('finds him under the name the pictures are labelled with', async () => {
+    const { openverseQueries } = stubTheWholeChain();
+    const found = await createPictures().search(SPOKEN, 'sr-Latn');
+
+    assert.equal(found.results.length, 2);
+    // And says so: the child asked for one spelling and got another, which is
+    // worth showing rather than quietly substituting.
+    assert.equal(found.query, CANONICAL);
+    assert.deepEqual(openverseQueries, [SPOKEN, CANONICAL]);
+  });
+
+  /**
+   * The restraint is the design. A word that already found pictures is never
+   * sent through Wikipedia, because full-text search would rank a singer called
+   * Taylor Love above the animal a child asking for `lav` wants.
+   */
+  it('leaves a search that already found something completely alone', async () => {
+    const { openverseQueries } = stubTheWholeChain();
+    const found = await createPictures().search(CANONICAL, 'sr-Latn');
+
+    assert.equal(found.results.length, 2);
+    assert.equal(found.query, CANONICAL);
+    assert.deepEqual(openverseQueries, [CANONICAL], 'a second spelling was looked for anyway');
+  });
+
+  it('keeps the words the child used when the other spelling finds nothing either', async () => {
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+      if (url.startsWith('https://api.openverse.org/')) return json({ results: [] });
+      if (url.startsWith('https://sr.wikipedia.org/')) {
+        return json({ query: { pages: { '1': { title: 'Нешто', pageprops: { wikibase_item: 'Q2' } } } } });
+      }
+      return json({ entities: { Q2: { sitelinks: { enwiki: { title: 'Something Else' } } } } });
+    }) as typeof fetch;
+
+    const found = await createPictures().search(SPOKEN, 'sr-Latn');
+    assert.equal(found.results.length, 0);
+    assert.equal(found.query, SPOKEN, 'a guess that found nothing was reported as what was asked');
+  });
+
+  /**
+   * Every child on a deployment shares one address, so they share one rate
+   * limit, and a 429 can be nobody's fault in particular. The stub below turns
+   * one away and then relents, which is the case worth retrying for.
+   */
+  it('waits a moment and asks again when it is told there have been too many of us', async () => {
+    let turnedAway = 0;
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+
+      if (url.startsWith('https://api.openverse.org/')) {
+        return json(new URL(url).searchParams.get('q') === CANONICAL ? OPENVERSE_ANSWER : { results: [] });
+      }
+      if (url.startsWith('https://sr.wikipedia.org/')) {
+        if (turnedAway++ === 0) return new Response('too many requests', { status: 429 });
+        return json({ query: { pages: { '1': { title: 'Ламин Јамал', pageprops: { wikibase_item: 'Q1' } } } } });
+      }
+      return json({ entities: { Q1: { sitelinks: { enwiki: { title: CANONICAL } } } } });
+    }) as typeof fetch;
+
+    const found = await createPictures().search(SPOKEN, 'sr-Latn');
+    assert.equal(turnedAway, 2, 'it did not knock a second time');
+    assert.equal(found.query, CANONICAL);
+    assert.equal(found.results.length, 2);
+  });
+
+  /**
+   * And the limit of that patience. Told to come back in five minutes we do
+   * not wait, and we do not pretend the search failed either — the child gets
+   * the empty shelf they already had, immediately.
+   */
+  it('gives up rather than making a child wait however long it is told to', async () => {
+    let knocks = 0;
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://api.openverse.org/')) {
+        return new Response(JSON.stringify({ results: [] }), { headers: { 'content-type': 'application/json' } });
+      }
+      knocks++;
+      return new Response('too many requests', { status: 429, headers: { 'retry-after': '300' } });
+    }) as typeof fetch;
+
+    const started = Date.now();
+    const found = await createPictures().search(SPOKEN, 'sr-Latn');
+
+    assert.equal(knocks, 1, 'it waited on a Retry-After it should have refused');
+    assert.ok(Date.now() - started < 1000, 'it made the child wait');
+    assert.equal(found.results.length, 0);
+    assert.equal(found.query, SPOKEN);
+  });
+
+  /** A refusal that is not about pace is an answer, and asking again is rude. */
+  it('does not knock twice when the answer was not about pace', async () => {
+    let knocks = 0;
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://api.openverse.org/')) {
+        return new Response(JSON.stringify({ results: [] }), { headers: { 'content-type': 'application/json' } });
+      }
+      knocks++;
+      return new Response('not found', { status: 404 });
+    }) as typeof fetch;
+
+    const found = await createPictures().search(SPOKEN, 'sr-Latn');
+    assert.equal(knocks, 1);
+    assert.equal(found.query, SPOKEN);
   });
 });
 
