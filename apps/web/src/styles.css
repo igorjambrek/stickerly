@@ -485,17 +485,21 @@ label.label {
   align-items: flex-start;
   justify-content: center;
   max-width: 100%;
+  /* Two pages share the room one page used to have, and must still fit
+     vertically. Named, because the page under a turning one is the same size
+     as the page turning, and neither may be measured twice. */
+  --sheet-w: min(420px, 43vw, 50vh);
 }
 
 /* Each half is a box the page sits in, so a phone can give it the whole screen. */
 .spread__half {
+  position: relative;
   display: flex;
   justify-content: center;
 }
 
-/* Two pages share the room one page used to have, and must still fit vertically. */
 .spread .page-sheet {
-  width: min(420px, 43vw, 50vh);
+  width: var(--sheet-w);
 }
 /* Square off the inner corners: the halves are one book, not two cards. */
 .spread__half:first-child .page-sheet {
@@ -544,6 +548,27 @@ label.label {
   --leaf-swing: 62deg;
 }
 
+/*
+ * The page underneath. A leaf coming over has to come off something, and a
+ * page being uncovered has to be uncovered from under something — without a
+ * sheet behind them the turn opens a hole and the room behind the book shows
+ * through it. Blank paper, exactly the page's own footprint, and there only
+ * while the halves are moving.
+ */
+.spread__under {
+  position: absolute;
+  inset: 0;
+  width: var(--sheet-w);
+  max-width: 100%;
+  margin-inline: auto;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--paper);
+  /* Inset, so nothing of it falls outside the page it is standing in for. */
+  box-shadow: inset 0 0 0 1px rgba(20, 30, 50, 0.07);
+  animation: leaf-under 0.46s linear;
+}
+
 /* The shadow the fold casts across the leaf: deepest at the spine, gone flat. */
 .spread__leaf::after {
   content: '';
@@ -555,8 +580,11 @@ label.label {
 }
 
 /* Left-hand page: hinged on its right edge, which is the spine. */
-.spread__half:first-child .spread__leaf {
+.spread__half:first-child .spread__leaf,
+.spread__half:first-child .spread__under {
   border-radius: 8px 2px 2px 8px;
+}
+.spread__half:first-child .spread__leaf {
   transform-origin: 100% 50%;
   --leaf-from: var(--leaf-swing);
 }
@@ -564,8 +592,11 @@ label.label {
   background: linear-gradient(to left, rgba(18, 26, 42, 0.5), rgba(18, 26, 42, 0) 58%);
 }
 /* Right-hand page: the same thing seen in a mirror. */
-.spread__half:last-child .spread__leaf {
+.spread__half:last-child .spread__leaf,
+.spread__half:last-child .spread__under {
   border-radius: 2px 8px 8px 2px;
+}
+.spread__half:last-child .spread__leaf {
   transform-origin: 0 50%;
   --leaf-from: calc(var(--leaf-swing) * -1);
 }
@@ -591,10 +622,6 @@ label.label {
 @keyframes leaf-turn {
   from {
     transform: perspective(1300px) rotateY(var(--leaf-from));
-    opacity: 0.55;
-  }
-  45% {
-    opacity: 1;
   }
   to {
     transform: perspective(1300px) rotateY(0deg);
@@ -605,7 +632,7 @@ label.label {
     opacity: 0.55;
   }
 }
-/* Uncovered, not turned: it grows out from the spine rather than off it. */
+/* Uncovered, not turned: it comes out from the spine rather than off it. */
 @keyframes leaf-uncover {
   from {
     transform: scale(0.97);
@@ -618,11 +645,19 @@ label.label {
     transform: scale(1);
   }
 }
+/* Held until the page above it is flat again, and then not there at all. */
+@keyframes leaf-under {
+  from,
+  90% {
+    opacity: 1;
+  }
+}
 
 /* Asked for stillness, a turn is simply the next spread, already there. */
 @media (prefers-reduced-motion: reduce) {
   .spread__leaf[data-leaf],
-  .spread__leaf[data-leaf]::after {
+  .spread__leaf[data-leaf]::after,
+  .spread__under {
     animation: none;
   }
 }
@@ -721,6 +756,18 @@ label.label {
     overscroll-behavior-x: contain;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
+    /*
+     * Width is settled by the height left over, not the other way round: a
+     * page is 210 x 297, so a page as wide as the screen is one and a half
+     * screens tall and the page strip goes over the horizon. 0.707 is
+     * 210/297, and the 204px is the bar, the pager and the strip around it.
+     *
+     * The floor is for a phone held sideways, where that sum leaves almost
+     * nothing: below about 260px a sticker stops being worth tapping, so the
+     * page keeps its size and the screen scrolls instead. Which is the right
+     * way round — a page too small to use is worse than one you must scroll.
+     */
+    --sheet-w: clamp(260px, calc((100dvh - 204px) * 0.707), 440px);
   }
   .spread::-webkit-scrollbar {
     display: none;
@@ -730,23 +777,15 @@ label.label {
     scroll-snap-align: center;
     padding: 0 10px;
   }
-  /*
-   * Width is settled by the height left over, not the other way round: a page
-   * is 210 x 297, so a page as wide as the screen is one and a half screens
-   * tall and the page strip goes over the horizon. 0.707 is 210/297, and the
-   * 204px is the bar, the pager and the strip above and below it.
-   *
-   * The floor is for a phone held sideways, where that sum leaves almost
-   * nothing: below about 260px a sticker stops being worth tapping, so the
-   * page keeps its size and the screen scrolls instead. Which is the right way
-   * round — a page too small to use is worse than a page you have to scroll.
-   */
   .spread .page-sheet,
   .spread__half:first-child .page-sheet,
   .spread__half:last-child .page-sheet {
-    width: clamp(260px, calc((100dvh - 204px) * 0.707), 440px);
     max-width: 100%;
     border-radius: 10px;
+  }
+  /* The page's own width, minus the room the half keeps either side of it. */
+  .spread__under {
+    max-width: calc(100% - 20px);
   }
   /*
    * The hinge is a screen edge here rather than a fold in the middle of a
@@ -756,7 +795,9 @@ label.label {
     --leaf-swing: 52deg;
   }
   .spread__half:first-child .spread__leaf,
-  .spread__half:last-child .spread__leaf {
+  .spread__half:first-child .spread__under,
+  .spread__half:last-child .spread__leaf,
+  .spread__half:last-child .spread__under {
     border-radius: 10px;
   }
   .spread__spine {
