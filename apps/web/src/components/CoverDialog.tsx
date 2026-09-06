@@ -1,13 +1,20 @@
 /**
- * Changing the cover after the album exists.
+ * Changing how the album looks after it exists.
  *
- * The same picker as the home screen, with a live preview of the real album —
- * its title, its owner and its actual sticker count — and a drag to frame the
- * photo, which is the only thing here the home screen cannot offer because
- * there is no album to upload into yet.
+ * The same two pickers as the home screen — theme, then cover — with a live
+ * preview of the real album: its title, its owner and its actual sticker
+ * count. A drag frames the photo, which is the one thing here the home screen
+ * cannot offer because there is no album to upload into yet.
  *
  * It can also go and find a picture, which the home screen again cannot: a
  * found picture is fetched into an album, and at that point there is one.
+ *
+ * The theme is here, beside the cover, because they are one decision seen
+ * twice — which world this album is in, and which of that world's covers it
+ * wears — and a child who started with dinosaurs and now wants cars should not
+ * have to start the album again. Nothing they have made is at stake: a theme
+ * repaints, it does not rearrange. Size and stickers-per-page, which would
+ * destroy slots, are the two that stay locked at creation.
  */
 
 import { useRef, useState, type PointerEvent } from 'react';
@@ -20,6 +27,7 @@ import { CoverPicker } from './CoverPicker.tsx';
 import { Dialog } from './Dialog.tsx';
 import { CoverSheet } from './CoverSheet.tsx';
 import { PictureSearch } from './PictureSearch.tsx';
+import { ThemePicker } from './ThemePicker.tsx';
 
 const BOX = { x: 0, y: 0, w: REF_PAGE.w, h: REF_PAGE.h };
 
@@ -150,21 +158,17 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
           </div>
 
           <div className="coverdialog__controls">
-            <label className="label" htmlFor="owner-name">
-              {t('home.yourName')}
-            </label>
-            <input
-              id="owner-name"
-              className="field"
-              value={owner}
-              maxLength={30}
-              placeholder={t('home.yourNamePlaceholder')}
-              onChange={(e) => setOwnerDraft(e.target.value)}
-              onBlur={commitOwnerName}
-              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              style={{ marginBottom: 16 }}
+            <label className="label">{t('home.pickTemplate')}</label>
+            <ThemePicker
+              templateId={album.templateId}
+              lang={album.lang}
+              onPick={(templateId) => onChange({ templateId })}
             />
+            <p className="hint">{t('editor.themeKeeps')}</p>
 
+            <label className="label" style={{ marginTop: 16 }}>
+              {t('home.pickCover')}
+            </label>
             <CoverPicker
               template={template}
               variantId={album.coverVariantId}
@@ -195,6 +199,20 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
                 />
               </>
             )}
+
+            <label className="label" htmlFor="owner-name" style={{ marginTop: 16 }}>
+              {t('home.yourName')}
+            </label>
+            <input
+              id="owner-name"
+              className="field"
+              value={owner}
+              maxLength={30}
+              placeholder={t('home.yourNamePlaceholder')}
+              onChange={(e) => setOwnerDraft(e.target.value)}
+              onBlur={commitOwnerName}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+            />
           </div>
         </div>
       )}

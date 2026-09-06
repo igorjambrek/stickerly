@@ -1948,6 +1948,17 @@ label.label {
   gap: 12px;
 }
 
+/*
+ * The seven themes, inside the cover dialog: the same chips as the covers
+ * below them, one size smaller because there are seven and they are a step
+ * further from what the child is actually choosing — which cover to wear.
+ */
+.themepicker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 10px;
+}
+
 .coverchip {
   padding: 0;
   border-radius: 14px;
