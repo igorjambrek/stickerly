@@ -321,3 +321,172 @@ export function volcanoShapes(cx: number, baseY: number, h: number, rock: string
     })),
   ];
 }
+
+/** How a car is painted, beyond its body colour. */
+export interface CarPaint {
+  /** Windows; set it to the body colour for a flat silhouette. */
+  glass?: string;
+  tyre?: string;
+  rim?: string;
+  /** -1 turns the car around to face left. */
+  facing?: 1 | -1;
+}
+
+/**
+ * A road car in profile, facing right — or left, if `facing` is -1.
+ *
+ * `len` is bumper to bumper and every other measurement follows from it, so a
+ * scene sizes a car by the one number it can judge. The car is centred on
+ * (cx, cy) horizontally and vertically about its body, with the tyres reaching
+ * `len * 0.16` below cy — a road places a car by its middle and the wheels
+ * land on the tarmac.
+ */
+export function carShapes(
+  cx: number,
+  cy: number,
+  len: number,
+  body: string,
+  { glass = '#CFE9FB', tyre = '#23262E', rim = '#DDE3EA', facing = 1 }: CarPaint = {},
+): Shape[] {
+  const u = len;
+  const ink = shade(body, 0.45);
+  const X = (dx: number) => cx + dx * facing * u;
+  const Y = (dy: number) => cy + dy * u;
+  const M = (dx: number, dy: number): PathCmd => ({ c: 'M', x: X(dx), y: Y(dy) });
+  const L = (dx: number, dy: number): PathCmd => ({ c: 'L', x: X(dx), y: Y(dy) });
+  const Q = (dx1: number, dy1: number, dx: number, dy: number): PathCmd => ({
+    c: 'Q',
+    x1: X(dx1),
+    y1: Y(dy1),
+    x: X(dx),
+    y: Y(dy),
+  });
+  /** A box given in car units, laid out left-to-right whichever way it faces. */
+  const box = (dx0: number, dy0: number, dx1: number, dy1: number, r = 0): PathCmd[] =>
+    roundedRectPath(Math.min(X(dx0), X(dx1)), Y(dy0), Math.abs(X(dx1) - X(dx0)), (dy1 - dy0) * u, r * u);
+
+  const shell: PathCmd[] = [
+    M(-0.5, 0.055),
+    L(-0.5, -0.015),
+    Q(-0.5, -0.058, -0.435, -0.062),
+    L(-0.355, -0.066),
+    // Rear screen up to the roof, a flat run, then the windscreen and bonnet.
+    Q(-0.315, -0.185, -0.225, -0.2),
+    L(0.005, -0.205),
+    Q(0.1, -0.202, 0.15, -0.078),
+    L(0.35, -0.068),
+    Q(0.475, -0.058, 0.5, 0.005),
+    L(0.5, 0.055),
+    { c: 'Z' },
+  ];
+  const greenhouse: PathCmd[] = [
+    M(-0.33, -0.085),
+    Q(-0.288, -0.172, -0.215, -0.182),
+    L(-0.012, -0.187),
+    Q(0.068, -0.184, 0.108, -0.088),
+    { c: 'Z' },
+  ];
+  const wheel = (dx: number): Shape[] => [
+    { k: 'circle', cx: X(dx), cy: Y(0.055), r: u * 0.105, fill: tyre },
+    { k: 'circle', cx: X(dx), cy: Y(0.055), r: u * 0.056, fill: rim },
+    { k: 'circle', cx: X(dx), cy: Y(0.055), r: u * 0.02, fill: shade(rim, 0.35) },
+  ];
+
+  return [
+    { k: 'path', cmds: shell, fill: body },
+    // A darker sill, so the car has a bottom rather than floating on the road.
+    { k: 'path', cmds: box(-0.49, 0.028, 0.49, 0.055), fill: ink, opacity: 0.3 },
+    { k: 'path', cmds: greenhouse, fill: glass },
+    { k: 'path', cmds: box(-0.13, -0.19, -0.1, -0.085), fill: body },
+    { k: 'line', x1: X(-0.1), y1: Y(-0.082), x2: X(-0.095), y2: Y(0.03), stroke: ink, sw: u * 0.006, opacity: 0.35 },
+    { k: 'path', cmds: box(-0.045, -0.052, 0.005, -0.038, 0.007), fill: ink, opacity: 0.5 },
+    { k: 'ellipse', cx: X(0.442), cy: Y(-0.03), rx: u * 0.026, ry: u * 0.02, fill: '#FFF3C4' },
+    { k: 'path', cmds: box(-0.486, -0.038, -0.458, -0.014, 0.007), fill: '#E8503A' },
+    ...wheel(-0.3),
+    ...wheel(0.295),
+  ];
+}
+
+/**
+ * A single-seater in profile, facing right: wings, sidepod, airbox and a
+ * helmet in the cockpit. Sized and placed the same way as `carShapes`, with
+ * the tyres reaching `len * 0.147` below cy.
+ */
+export function raceCarShapes(
+  cx: number,
+  cy: number,
+  len: number,
+  body: string,
+  accent: string,
+  helmet = '#F2F4F8',
+): Shape[] {
+  const u = len;
+  const X = (dx: number) => cx + dx * u;
+  const Y = (dy: number) => cy + dy * u;
+  const M = (dx: number, dy: number): PathCmd => ({ c: 'M', x: X(dx), y: Y(dy) });
+  const L = (dx: number, dy: number): PathCmd => ({ c: 'L', x: X(dx), y: Y(dy) });
+  const Q = (dx1: number, dy1: number, dx: number, dy: number): PathCmd => ({
+    c: 'Q',
+    x1: X(dx1),
+    y1: Y(dy1),
+    x: X(dx),
+    y: Y(dy),
+  });
+  const box = (dx0: number, dy0: number, dx1: number, dy1: number, r = 0): PathCmd[] =>
+    roundedRectPath(X(dx0), Y(dy0), (dx1 - dx0) * u, (dy1 - dy0) * u, r * u);
+
+  const chassis: PathCmd[] = [
+    M(-0.44, 0.05),
+    L(0.16, 0.052),
+    // The nose, out to its tip and back along the top to the cockpit.
+    Q(0.34, 0.05, 0.47, 0.024),
+    L(0.47, 0.0),
+    Q(0.32, -0.026, 0.16, -0.04),
+    L(0.1, -0.044),
+    L(0.055, -0.088),
+    L(-0.028, -0.09),
+    // Up over the airbox, then down the engine cover to the rear axle.
+    Q(-0.1, -0.092, -0.14, -0.15),
+    L(-0.185, -0.155),
+    Q(-0.215, -0.1, -0.27, -0.072),
+    L(-0.44, -0.05),
+    { c: 'Z' },
+  ];
+  const sidepod: PathCmd[] = [
+    M(-0.26, 0.05),
+    L(0.0, 0.05),
+    L(0.0, -0.005),
+    Q(-0.03, -0.038, -0.1, -0.04),
+    L(-0.2, -0.04),
+    Q(-0.26, -0.04, -0.26, 0.005),
+    { c: 'Z' },
+  ];
+  const wheel = (dx: number): Shape[] => [
+    { k: 'circle', cx: X(dx), cy: Y(0.022), r: u * 0.125, fill: '#23262E' },
+    { k: 'circle', cx: X(dx), cy: Y(0.022), r: u * 0.125, stroke: '#3A3F4A', sw: u * 0.012 },
+    { k: 'circle', cx: X(dx), cy: Y(0.022), r: u * 0.055, fill: '#C9CFD8' },
+    { k: 'circle', cx: X(dx), cy: Y(0.022), r: u * 0.018, fill: '#8B94A2' },
+  ];
+
+  return [
+    // Rear wing first: the support disappears behind the engine cover.
+    { k: 'path', cmds: box(-0.45, -0.16, -0.412, 0.03), fill: shade(body, 0.3) },
+    { k: 'path', cmds: box(-0.5, -0.185, -0.30, -0.155, 0.008), fill: shade(accent, 0.12) },
+    { k: 'path', cmds: box(-0.485, -0.142, -0.325, -0.122, 0.006), fill: accent },
+    { k: 'path', cmds: box(-0.5, -0.195, -0.455, -0.09, 0.008), fill: accent },
+    // Front wing, low and wide.
+    { k: 'path', cmds: box(0.30, 0.046, 0.52, 0.078, 0.006), fill: accent },
+    { k: 'path', cmds: box(0.475, 0.012, 0.52, 0.086, 0.008), fill: shade(accent, 0.12) },
+    { k: 'path', cmds: box(-0.42, 0.05, 0.2, 0.062), fill: '#1F2229' },
+    { k: 'path', cmds: chassis, fill: body },
+    { k: 'path', cmds: sidepod, fill: shade(body, 0.18) },
+    { k: 'path', cmds: box(-0.25, -0.005, -0.02, 0.012, 0.006), fill: accent },
+    { k: 'path', cmds: box(0.18, -0.03, 0.42, -0.012, 0.006), fill: accent, opacity: 0.9 },
+    // The driver: a helmet in the cockpit opening, visor forward.
+    { k: 'circle', cx: X(0.0), cy: Y(-0.125), r: u * 0.055, fill: helmet },
+    { k: 'path', cmds: box(-0.05, -0.14, 0.04, -0.122, 0.009), fill: accent },
+    { k: 'ellipse', cx: X(0.024), cy: Y(-0.122), rx: u * 0.031, ry: u * 0.019, fill: '#2A2E38' },
+    ...wheel(-0.3),
+    ...wheel(0.265),
+  ];
+}

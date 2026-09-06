@@ -22,7 +22,7 @@
 
 import type { Rng } from './rng.ts';
 import type { Size } from './geometry.ts';
-import type { Shape } from './shapes.ts';
+import type { PathCmd, Shape } from './shapes.ts';
 import type { ArtFn, CoverVariant } from './art.ts';
 import { bg, faded, scatterIn } from './art.ts';
 import {
@@ -35,6 +35,7 @@ import {
   pawShapes,
   pencilShapes,
   planetShapes,
+  roundedRectPath,
   sparklePath,
   starPath,
   trianglePath,
@@ -45,6 +46,9 @@ import {
   buntingShapes,
   candyShapes,
   checkerBand,
+  chequeredFlagShapes,
+  colorAt,
+  coneShapes,
   crownPath,
   fishShapes,
   flagShapes,
@@ -61,15 +65,19 @@ import {
   shade,
   shieldPath,
   spiralShapes,
+  steeringWheelShapes,
   sunburst,
   tint,
+  trafficLightShapes,
   trophyShapes,
 } from './motifs.ts';
 import {
+  carShapes,
   catFaceShapes,
   dinoShapes,
   dogFaceShapes,
   palmShapes,
+  raceCarShapes,
   rocketShapes,
   rosetteShapes,
   schoolShapes,
@@ -745,6 +753,447 @@ const dinosMyDino: CoverVariant = {
 };
 export const dinoVariants: readonly CoverVariant[] = [dinosJungle, dinosVolcano, dinosFossils, dinosMyDino];
 // ---------------------------------------------------------------------------
+// Cars
+// ---------------------------------------------------------------------------
+/** Streaks of motion, the way a comic book says "fast". */
+const speedLines = (count: number, color: string, maxOpacity = 0.14): ArtFn =>
+  inBands(count, (x, y, r) => {
+    const len = r.range(10, 40);
+    return {
+      k: 'path',
+      cmds: roundedRectPath(x - len / 2, y, len, r.range(0.6, 1.4), 0.7),
+      fill: color,
+      opacity: r.range(0.04, maxOpacity),
+    };
+  });
+/** Four squares of a chequered flag, small enough to pass for paper texture. */
+const chequerMark = (x: number, y: number, s: number, opacity = 0.75): Shape[] => [
+  { k: 'rect', x, y, w: s, h: s, fill: '#FFFFFF', opacity },
+  { k: 'rect', x: x + s, y, w: s, h: s, fill: '#1B1F26', opacity },
+  { k: 'rect', x, y: y + s, w: s, h: s, fill: '#1B1F26', opacity },
+  { k: 'rect', x: x + s, y: y + s, w: s, h: s, fill: '#FFFFFF', opacity },
+];
+/** A stack of worn tyres, the kind that lines a circuit. */
+const tyreStack = (cx: number, baseY: number, r: number, count: number): Shape[] => {
+  const out: Shape[] = [];
+  for (let i = 0; i < count; i++) {
+    const cy = baseY - r * 0.55 - i * r * 0.95;
+    out.push(
+      { k: 'ellipse', cx, cy, rx: r, ry: r * 0.55, fill: '#1B1F26' },
+      { k: 'ellipse', cx, cy: cy - r * 0.08, rx: r * 0.44, ry: r * 0.22, fill: '#40464F' },
+    );
+  }
+  return out;
+};
+/**
+ * One puff of dust, as a single path: overlapping translucent circles would
+ * show every seam where they cross, and a dust cloud has no seams.
+ */
+const dustPuff = (x: number, y: number, w: number, h: number, fill: string, opacity: number): Shape => {
+  const lobes = 4;
+  const step = w / lobes;
+  // Tallest where it leaves the wheels, thinning out behind the car.
+  const peak = (i: number) => h * (0.55 + (i / (lobes - 1)) * 0.85 + (i % 2) * 0.18);
+  const cmds: PathCmd[] = [{ c: 'M', x, y }];
+  for (let i = 0; i < lobes; i++) {
+    const x0 = x + i * step;
+    const x1 = x0 + step;
+    const top = y - peak(i);
+    // Valleys stay high, so the lobes read as one billow rather than as hills.
+    const end = i === lobes - 1 ? y : y - Math.min(peak(i), peak(i + 1)) * 0.62;
+    cmds.push(
+      { c: 'Q', x1: x0, y1: top, x: x0 + step * 0.5, y: top },
+      { c: 'Q', x1: x1, y1: top, x: x1, y: end },
+    );
+  }
+  cmds.push({ c: 'Z' });
+  return { k: 'path', cmds, fill, opacity };
+};
+const carsRace: CoverVariant = {
+  id: 'race',
+  name: { 'sr-Cyrl': 'Трка', 'sr-Latn': 'Trka', en: 'Race day', ru: 'Гонка' },
+  emoji: '🏁',
+  coverArt: buildCover({
+    sky: ['#1B0710', '#5E101F', '#A8182B', '#3C0912'],
+    wash: (rng, size) => {
+      const c = crestAt(size);
+      return [
+        ...sunburst(c.cx, c.cy, size.h * 0.66, 20, { fill: '#F2C230', opacity: 0.07 }),
+        ...glowEllipse(c.cx, c.cy + 4, size.w * 0.5, 62, '#F2C230', 16, 0.22),
+        ...speedLines(15, '#FFFFFF')(rng, size),
+      ];
+    },
+    texture: inBands(9, (x, y, r) => chequerMark(x, y, r.range(1.6, 2.6), 0.85)),
+    ground: (rng, size) => {
+      const y = horizonOf(size);
+      return [
+        // Beyond the track: the dark of a circuit under floodlights.
+        { k: 'rect', x: 0, y: y - 16, w: size.w, h: size.h - y + 16, fill: '#20101A' },
+        ...checkerBand({ x: 0, y: y - 14, w: size.w, h: 7 }, 7, '#F2F4F8', '#1B1F26'),
+        { k: 'rect', x: 0, y: y - 7, w: size.w, h: 2, fill: '#C21F30' },
+        ...perspectiveFloor('#343A47', 1)(rng, size),
+        { k: 'line', x1: size.w * 0.24, y1: y, x2: -4, y2: size.h + 4, stroke: '#F2F4F8', sw: 1, opacity: 0.45 },
+        { k: 'line', x1: size.w * 0.76, y1: y, x2: size.w + 4, y2: size.h + 4, stroke: '#F2F4F8', sw: 1, opacity: 0.45 },
+        ...tyreStack(size.w * 0.11, y + 9, 7, 3),
+        ...tyreStack(size.w * 0.89, y + 9, 7, 3),
+        ...raceCarShapes(size.w / 2, size.h - 30, 104, '#F2F4F8', '#C21F30'),
+      ];
+    },
+    crest: (_rng, size) => {
+      const c = crestAt(size);
+      // Two flags crossed on their staffs, the way a circuit says "finish".
+      const staff = (dx: number): Shape => ({
+        k: 'line',
+        x1: c.cx + dx * 2,
+        y1: c.cy - 30,
+        x2: c.cx - dx * 22,
+        y2: c.cy + 30,
+        stroke: '#E8E2D8',
+        sw: 2.4,
+        round: true,
+      });
+      return [
+        ...glow(c.cx, c.cy, 48, '#F2C230', 14, 0.3),
+        staff(-1),
+        staff(1),
+        ...chequeredFlagShapes(c.cx - 2, c.cy - 30, -44, 26, -12),
+        ...chequeredFlagShapes(c.cx + 2, c.cy - 30, 44, 26, 12),
+      ];
+    },
+  }),
+  backArt: buildBack({
+    sky: ['#1B0710', '#5E101F', '#3C0912'],
+    texture: (rng, size) => [
+      ...speedLines(14, '#FFFFFF')(rng, size),
+      ...inBands(7, (x, y, r) => chequerMark(x, y, r.range(1.6, 2.4), 0.8))(rng, size),
+    ],
+    emblem: (_rng, size) => [
+      ...glow(size.w / 2, size.h * 0.16, 34, '#F2C230', 12, 0.26),
+      { k: 'line', x1: size.w / 2 - 26, y1: size.h * 0.16 - 16, x2: size.w / 2 - 30, y2: size.h * 0.16 + 24, stroke: '#E8E2D8', sw: 2.2, round: true },
+      ...chequeredFlagShapes(size.w / 2 - 26, size.h * 0.16 - 15, 52, 28, 8),
+    ],
+  }),
+};
+const carsRally: CoverVariant = {
+  id: 'rally',
+  name: { 'sr-Cyrl': 'Рели', 'sr-Latn': 'Reli', en: 'Rally', ru: 'Ралли' },
+  emoji: '🚙',
+  palette: {
+    coverBg: '#8A3E1E',
+    coverAccent: '#F5C86A',
+    plaque: '#FFF6E6',
+    plaqueEdge: '#C4622C',
+    plaqueInk: '#4A2313',
+  },
+  coverArt: buildCover({
+    sky: ['#2E1B3E', '#7A3A50', '#C9663F', '#EFA85C'],
+    wash: (_rng, size) => [
+      ...glowEllipse(size.w / 2, size.h * 0.8, size.w * 0.7, 58, '#F7C56E', 16, 0.4),
+      ...glow(crestAt(size).cx, crestAt(size).cy, 54, '#F7C56E', 14, 0.2),
+    ],
+    texture: inBands(30, (x, y, r) => ({
+      k: 'circle',
+      cx: x,
+      cy: y,
+      r: r.range(0.4, 1.7),
+      fill: '#F7D9A8',
+      opacity: r.range(0.2, 0.6),
+    })),
+    ground: (rng, size) => {
+      const y = horizonOf(size);
+      return [
+        { k: 'path', cmds: mountainsPath(-4, size.w + 4, y + 1, [y - 24, y - 36, y - 18, y - 31, y - 21]), fill: '#5E3355' },
+        { k: 'path', cmds: hillsPath(-4, size.w + 4, y + 3, [y - 12, y - 17, y - 9]), fill: '#4A2740' },
+        { k: 'rect', x: 0, y: y + 2, w: size.w, h: size.h - y, fill: '#D9A063' },
+        ...perspectiveFloor('#9E7042', 1)(rng, size),
+        // Two ruts worn into the gravel, spreading as the road nears.
+        ...[-1, 1].map((s): Shape => ({
+          k: 'line',
+          x1: size.w / 2 + s * 9,
+          y1: y + 2,
+          x2: size.w / 2 + s * 52,
+          y2: size.h,
+          stroke: '#C08A52',
+          sw: 2.6,
+          opacity: 0.7,
+        })),
+        ...coneShapes(size.w * 0.16, size.h - 22, 17, '#EF6A3A'),
+        ...coneShapes(size.w * 0.87, size.h - 10, 21, '#EF6A3A'),
+        ...[0.3, 0.62, 0.78].map((t, i): Shape => ({
+          k: 'ellipse',
+          cx: size.w * t,
+          cy: y + 8 + i * 5,
+          rx: 4 + i,
+          ry: 1.8 + i * 0.5,
+          fill: '#7A4E2E',
+          opacity: 0.8,
+        })),
+      ];
+    },
+    crest: (_rng, size) => {
+      const c = crestAt(size);
+      return [
+        // Dust thrown up behind the car, thinning as it falls back.
+        dustPuff(c.cx - 88, c.cy + 18, 76, 22, '#E8CFAA', 0.75),
+        dustPuff(c.cx - 62, c.cy + 18, 52, 15, '#FBEEDA', 0.85),
+        // …and the streaks a comic would draw behind anything going fast.
+        ...[0, 1, 2].map((i): Shape => ({
+          k: 'path',
+          cmds: roundedRectPath(c.cx - 84 + (i % 2) * 12, c.cy - 20 + i * 9, 32 - i * 4, 2.4, 1.2),
+          fill: '#FFE9C4',
+          opacity: 0.5 - i * 0.08,
+        })),
+        { k: 'ellipse', cx: c.cx + 6, cy: c.cy + 16.5, rx: 48, ry: 4, fill: '#2E1B3E', opacity: 0.35 },
+        ...carShapes(c.cx + 6, c.cy, 96, '#F2F4F8', { glass: '#BFE3F7' }),
+        // A stripe down the flank and a bar of lamps over the roof.
+        { k: 'path', cmds: roundedRectPath(c.cx - 37, c.cy - 2, 53, 3.4, 1.7), fill: '#C21F30' },
+        { k: 'path', cmds: roundedRectPath(c.cx - 17.5, c.cy - 22.6, 26, 2.6, 1.3), fill: '#3B4250' },
+        ...[0, 1, 2, 3].map((i): Shape => ({
+          k: 'circle',
+          cx: c.cx - 14 + i * 6,
+          cy: c.cy - 24.4,
+          r: 2.6,
+          fill: '#FFF3C4',
+        })),
+      ];
+    },
+  }),
+  backArt: buildBack({
+    sky: ['#2E1B3E', '#7A3A50', '#C9663F'],
+    texture: inBands(24, (x, y, r) => ({
+      k: 'circle',
+      cx: x,
+      cy: y,
+      r: r.range(0.4, 1.6),
+      fill: '#F7D9A8',
+      opacity: r.range(0.2, 0.55),
+    })),
+    emblem: (_rng, size) => {
+      const cy = size.h * 0.17;
+      return [
+        { k: 'circle', cx: size.w / 2, cy, r: 24, fill: '#F7E3C0' },
+        { k: 'circle', cx: size.w / 2, cy: cy - 5, r: 8, fill: '#EF8A4E' },
+        { k: 'path', cmds: mountainsPath(size.w / 2 - 20, size.w / 2 + 20, cy + 10, [cy - 4, cy - 12, cy - 1]), fill: '#8A4A34' },
+        { k: 'circle', cx: size.w / 2, cy, r: 24, stroke: '#C4622C', sw: 1.8 },
+      ];
+    },
+  }),
+};
+/** A row of flat-topped buildings with windows, some of them lit. */
+const skyline = (rng: Rng, size: Size, baseY: number, colors: readonly string[]): Shape[] => {
+  const out: Shape[] = [];
+  let x = -6;
+  while (x < size.w + 6) {
+    const w = rng.range(16, 28);
+    const h = rng.range(22, 52);
+    out.push(
+      { k: 'rect', x, y: baseY - h, w, h, fill: rng.pick(colors) },
+      { k: 'rect', x, y: baseY - h, w, h: 2, fill: '#FFFFFF', opacity: 0.2 },
+    );
+    for (let wy = baseY - h + 6; wy < baseY - 7; wy += 8) {
+      for (let wx = x + 3.5; wx < x + w - 5; wx += 7) {
+        out.push({
+          k: 'rect',
+          x: wx,
+          y: wy,
+          w: 3.4,
+          h: 4.2,
+          rx: 0.6,
+          fill: rng.bool(0.4) ? '#FFE9A8' : '#9FC4E0',
+          opacity: 0.75,
+        });
+      }
+    }
+    x += w + rng.range(1.5, 5);
+  }
+  return out;
+};
+const carsCity: CoverVariant = {
+  id: 'city',
+  name: { 'sr-Cyrl': 'У граду', 'sr-Latn': 'U gradu', en: 'In town', ru: 'В городе' },
+  emoji: '🚦',
+  palette: {
+    coverBg: '#1E5FA8',
+    coverAccent: '#FFD166',
+    plaque: '#FFFFFF',
+    plaqueEdge: '#1E5FA8',
+    plaqueInk: '#12395F',
+  },
+  coverArt: buildCover({
+    sky: ['#1B5C9E', '#3E8ACB', '#89C2EA', '#CFE6F5'],
+    wash: (_rng, size) => [
+      ...glow(size.w * 0.8, size.h * 0.08, 46, '#FFF3C4', 14, 0.5),
+      ...cloudShapes(size.w * 0.22, size.h * 0.07, 42, { fill: '#FFFFFF' }),
+      ...cloudShapes(size.w * 0.66, size.h * 0.21, 30, { fill: '#DCEBF7' }),
+    ],
+    texture: inBands(5, (x, y, r) => ({
+      k: 'path',
+      cmds: [
+        { c: 'M', x: x - r.range(3, 5), y },
+        { c: 'Q', x1: x - 1.5, y1: y - 2.2, x, y },
+        { c: 'Q', x1: x + 1.5, y1: y - 2.2, x: x + r.range(3, 5), y },
+      ],
+      stroke: '#FFFFFF',
+      sw: 0.7,
+      opacity: 0.6,
+    })),
+    ground: (rng, size) => {
+      const kerb = size.h - 40;
+      const road = size.h - 34;
+      return [
+        ...skyline(rng, size, kerb, ['#2E5E8C', '#3E7AA8', '#27506F', '#4A87B5']),
+        { k: 'rect', x: 0, y: kerb, w: size.w, h: road - kerb, fill: '#C9CFD8' },
+        { k: 'rect', x: 0, y: road, w: size.w, h: size.h - road, fill: '#3B4250' },
+        { k: 'rect', x: 0, y: road, w: size.w, h: 1.4, fill: '#E8EDF2' },
+        // A crossing under the lights, then the traffic itself.
+        ...Array.from({ length: 5 }, (_, i): Shape => ({
+          k: 'rect',
+          x: 10 + i * 9,
+          y: road + 3,
+          w: 5,
+          h: size.h - road - 6,
+          fill: '#E8EDF2',
+          opacity: 0.9,
+        })),
+        ...Array.from({ length: 6 }, (_, i): Shape => ({
+          k: 'rect',
+          x: 62 + i * 26,
+          y: size.h - 15,
+          w: 12,
+          h: 1.8,
+          fill: '#E8EDF2',
+          opacity: 0.85,
+        })),
+        ...trafficLightShapes(size.w * 0.13, kerb, 46, '#5A6270', '#2E3440'),
+        ...carShapes(size.w * 0.72, size.h - 24, 48, '#4FA3D9', { glass: '#DDF0FB', facing: -1 }),
+        ...carShapes(size.w * 0.42, size.h - 11, 64, '#E8503A'),
+      ];
+    },
+    crest: (_rng, size) => {
+      const c = crestAt(size);
+      // A round road sign: white ring, blue field, one white car.
+      return [
+        ...glow(c.cx, c.cy, 40, '#FFFFFF', 12, 0.3),
+        { k: 'circle', cx: c.cx, cy: c.cy, r: 30, fill: '#FFFFFF' },
+        { k: 'circle', cx: c.cx, cy: c.cy, r: 26.5, fill: '#1E5FA8' },
+        ...carShapes(c.cx, c.cy + 3, 44, '#FFFFFF', { glass: '#1E5FA8', tyre: '#12395F', rim: '#FFFFFF' }),
+      ];
+    },
+  }),
+  backArt: buildBack({
+    sky: ['#1B5C9E', '#3E8ACB', '#89C2EA'],
+    texture: (rng, size) => [
+      ...cloudShapes(size.w * 0.24, size.h * 0.42, 40, { fill: '#FFFFFF' }),
+      ...cloudShapes(size.w * 0.74, size.h * 0.32, 30, { fill: '#DCEBF7' }),
+      ...inBands(4, (x, y, r) => ({ k: 'circle', cx: x, cy: y, r: r.range(0.6, 1.4), fill: '#FFFFFF', opacity: 0.4 }))(rng, size),
+    ],
+    emblem: (_rng, size) => [
+      { k: 'circle', cx: size.w / 2, cy: size.h * 0.16, r: 24, fill: '#FFFFFF' },
+      { k: 'circle', cx: size.w / 2, cy: size.h * 0.16, r: 21, fill: '#1E5FA8' },
+      ...carShapes(size.w / 2, size.h * 0.16 + 2, 32, '#FFFFFF', { glass: '#1E5FA8', tyre: '#12395F', rim: '#FFFFFF' }),
+    ],
+  }),
+};
+/**
+ * A big low sun, banded the way a poster from the seventies draws one. The
+ * slits are painted in the sky's own colour, so the sun reads as cut into
+ * rather than covered over.
+ */
+const retroSun = (cx: number, cy: number, r: number, stops: readonly string[], slit: string): Shape[] => {
+  const out: Shape[] = Array.from({ length: 16 }, (_, i): Shape => ({
+    k: 'circle',
+    cx,
+    cy,
+    r: r * (1 - i / 16),
+    fill: colorAt(stops, i / 15),
+  }));
+  for (let i = 0; i < 6; i++) {
+    const dy = r * (0.14 + i * 0.14);
+    const h = r * (0.03 + i * 0.012);
+    const hw = Math.sqrt(Math.max(0, r * r - (dy + h) * (dy + h)));
+    out.push({ k: 'rect', x: cx - hw, y: cy + dy, w: hw * 2, h, fill: slit });
+  }
+  return out;
+};
+const carsClassics: CoverVariant = {
+  id: 'classics',
+  name: { 'sr-Cyrl': 'Олдтајмери', 'sr-Latn': 'Oldtajmeri', en: 'Classics', ru: 'Ретро' },
+  emoji: '🚕',
+  palette: {
+    coverBg: '#3A2059',
+    coverAccent: '#F7C56E',
+    plaque: '#FFF6E8',
+    plaqueEdge: '#F7C56E',
+    plaqueInk: '#4A1F3A',
+  },
+  coverArt: buildCover({
+    sky: ['#2A1B4E', '#6E2F6B', '#C9515F', '#F0925A', '#F7C56E'],
+    wash: (_rng, size) => glowEllipse(size.w / 2, size.h * 0.14, size.w * 0.6, 70, '#F7C56E', 16, 0.3),
+    texture: (rng, size) => [
+      ...sparkles(7, '#FFE9A8', 'top')(rng, size),
+      ...inBands(16, (x, y, r) => ({
+        k: 'circle',
+        cx: x,
+        cy: y,
+        r: r.range(0.4, 1.2),
+        fill: '#FFE9A8',
+        opacity: r.range(0.3, 0.7),
+      }))(rng, size),
+    ],
+    ground: (_rng, size) => {
+      const y = horizonOf(size);
+      const road = size.h - 34;
+      return [
+        { k: 'path', cmds: hillsPath(-4, size.w + 4, y + 4, [y - 16, y - 26, y - 12]), fill: '#4A2740' },
+        ...palmShapes(24, road + 2, 54, '#3A2340', '#5A2E58', 10),
+        ...palmShapes(size.w - 20, road + 2, 44, '#3A2340', '#5A2E58', -8),
+        { k: 'rect', x: 0, y: road, w: size.w, h: size.h - road, fill: '#2E2438' },
+        { k: 'rect', x: 0, y: road, w: size.w, h: 1.6, fill: '#F0925A', opacity: 0.7 },
+        ...Array.from({ length: 6 }, (_, i): Shape => ({
+          k: 'rect',
+          x: 8 + i * 36,
+          y: size.h - 9,
+          w: 16,
+          h: 1.8,
+          fill: '#F7C56E',
+          opacity: 0.6,
+        })),
+        { k: 'ellipse', cx: size.w / 2, cy: size.h - 4, rx: 54, ry: 5, fill: '#1B1226', opacity: 0.45 },
+        ...carShapes(size.w / 2, size.h - 20, 100, '#F2E4C8', { glass: '#F7D9A8' }),
+      ];
+    },
+    crest: (_rng, size) => {
+      const c = crestAt(size);
+      return [
+        ...retroSun(c.cx, c.cy, 40, ['#FFF3C4', '#F7B85C', '#EF6F5C'], '#4E2760'),
+        ...carShapes(c.cx, c.cy + 15, 86, '#2E1832', { glass: '#2E1832', tyre: '#241028', rim: '#4A2D50' }),
+      ];
+    },
+  }),
+  backArt: buildBack({
+    sky: ['#2A1B4E', '#6E2F6B', '#C9515F'],
+    texture: sparkles(10, '#FFE9A8'),
+    emblem: (_rng, size) => [
+      ...glow(size.w / 2, size.h * 0.16, 34, '#F7C56E', 12, 0.3),
+      ...steeringWheelShapes(size.w / 2, size.h * 0.16, 22, '#F7EFE0', '#C9515F'),
+    ],
+  }),
+};
+const carsMine: CoverVariant = {
+  id: 'mycar',
+  name: { 'sr-Cyrl': 'Моја вожња', 'sr-Latn': 'Moja vožnja', en: 'My ride', ru: 'Моя машина' },
+  emoji: '📷',
+  photo: true,
+  palette: {
+    coverBg: '#2E3440',
+    coverAccent: '#F2C230',
+    plaque: '#FFFFFF',
+    plaqueEdge: '#F2C230',
+    plaqueInk: '#23262E',
+  },
+};
+export const carsVariants: readonly CoverVariant[] = [carsRace, carsRally, carsCity, carsClassics, carsMine];
+// ---------------------------------------------------------------------------
 // Unicorns
 // ---------------------------------------------------------------------------
 const RAINBOW = ['#FF6B8B', '#FF9E6B', '#FFD166', '#7ED9A0', '#6BC5FF', '#B08BFF'] as const;
@@ -1182,6 +1631,7 @@ export const ALL_VARIANTS: readonly CoverVariant[] = [
   ...footballVariants,
   ...spaceVariants,
   ...dinoVariants,
+  ...carsVariants,
   ...unicornVariants,
   ...petVariants,
   ...classVariants,

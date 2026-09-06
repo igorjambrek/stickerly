@@ -90,8 +90,8 @@ npm run pdf:sample football champions a3 9
 npm run pdf:sample unicorns candy a4 2 en
 ```
 
-Themes: `football`, `space`, `dinos`, `unicorns`, `pets`, `class`; `pdf:sample`
-lists a theme's covers if you name one that does not exist.
+Themes: `football`, `space`, `dinos`, `cars`, `unicorns`, `pets`, `class`;
+`pdf:sample` lists a theme's covers if you name one that does not exist.
 
 ---
 
@@ -236,8 +236,8 @@ packages/shared/         geometry, imposition, numbering, themes, i18n
   imposition.ts          which album page prints where on which folded sheet
   numbering.ts           sticker numbers, derived from position and nothing else
   shapes.ts              the drawing primitives both renderers understand
-  covers.ts              all 25 covers, built from one four-part composition
-  templates.ts           the six themes: palettes, page artwork, cover lists
+  covers.ts              all 30 covers, built from one four-part composition
+  templates.ts           the seven themes: palettes, page artwork, cover lists
   realtime.ts            the live protocol: what the socket says, both ways
 apps/server/
   pdf/                   canvas.ts (mm -> points), cover, pages, stickers
@@ -264,7 +264,7 @@ order, recomputed on every read, so adding a page, deleting one or dragging a
 sticker renumbers everything for free and the screen cannot drift from the print.
 
 **Every cover is data.** A cover variant is a palette override plus four artwork
-functions; all 25 are built by `buildCover` from one skeleton — gradient sky,
+functions; all 30 are built by `buildCover` from one skeleton — gradient sky,
 wash, texture, a scene along the bottom, one emblem at the top — which is why
 they look like a set. Adding a cover is one entry in `covers.ts`. The bands where
 the title plaque and the sticker count sit are left quiet, so artwork can never

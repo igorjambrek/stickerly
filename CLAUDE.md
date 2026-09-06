@@ -83,7 +83,7 @@ Other load-bearing decisions (don't relitigate these without reading
 - **A phone is a different shape, not a smaller screen** — most of it is CSS (`styles.css` is organised by area, with each area's phone rules beside its own), but three places need different markup rather than a rearrangement of the same markup, and those ask `useMedia(PHONE)` in JS: the editor's toolbar (a bar, or a `⋯` sheet), the spread, and the home screen's sticky "make it" bar. The album's actions are described once as an `actions` array in `Editor.tsx` and rendered both ways from it, so a new action cannot exist on one and not the other.
 - **Sticker numbers are never stored** — a slot's number is its reading-order position, recomputed on every read (`packages/shared/src/numbering.ts`).
 - **Album size and stickers-per-page are locked at creation** — changing either would add/destroy slots in an album that may already have photos.
-- **A cover is data**: a palette override + four artwork functions in `packages/shared/src/covers.ts`; `buildCover` composes all 25 from one skeleton (gradient sky, wash, texture, scene, emblem). Adding a cover = one entry there.
+- **A cover is data**: a palette override + four artwork functions in `packages/shared/src/covers.ts`; `buildCover` composes all 30 from one skeleton (gradient sky, wash, texture, scene, emblem). Adding a cover = one entry there.
 - **Albums are reached by secret link, not account** — `apps/server/src/repo.ts` scopes all SQLite access by an album's secret token; photos are served through the same token.
 - **Passports are a layer on top, never a gate** — a person is an avatar plus a generated nickname, authenticated by a device key hashed into `devices` and sent as the `x-nalepko-device` header. `req.person` is resolved for every request and required by almost none: album routes read it only to record who did something, so an anonymous child with a link still works. Identity lives in `apps/server/src/identity.ts`; `album_members` stays with the album data in `repo.ts`.
 - **The passport is asked for before the first album, and pre-filled** — a genuinely first visit to `/` (no device key, no albums this browser remembers) gets `screens/Welcome.tsx` instead of the album steps, and an invite link asks the same two things on the join screen. Both come with a face and a name already chosen, so either costs one tap, and both mint on that tap rather than on arrival — a bare page view still creates nobody. `components/PassportForm.tsx` is that form in all three places it appears; the passport screen is the third, and the only one that saves as it goes rather than holding a draft.
@@ -105,7 +105,7 @@ Directory map beyond what's obvious from the names:
 packages/shared/src/
   geometry.ts     paper sizes, reference page, every grid position
   imposition.ts   which album page prints where on which folded sheet
-  art.ts          theme/cover-variant types; templates.ts has the six themes
+  art.ts          theme/cover-variant types; templates.ts has the seven themes
   avatars.ts      the 24 passport pictures, each noun gendered per language
   nicknames.ts    adjective + that avatar's noun, agreeing in gender
   codes.ts        the six-character code format, shared by both sides

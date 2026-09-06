@@ -13,7 +13,7 @@
 
 import type { Rect } from './geometry.ts';
 import type { Paint, PathCmd, Shape } from './shapes.ts';
-import { ellipsePath, leafPath, rotatePath, roundedRectPath, starPath, trianglePath } from './shapes.ts';
+import { arcPath, ellipsePath, leafPath, rotatePath, roundedRectPath, starPath, trianglePath } from './shapes.ts';
 
 // ---------------------------------------------------------------------------
 // Colour
@@ -492,4 +492,142 @@ export function lollipopShapes(cx: number, cy: number, r: number, a: string, b: 
   }
   out.push({ k: 'circle', cx, cy, r, stroke: shade(a, 0.2), sw: r * 0.09 });
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// The road
+// ---------------------------------------------------------------------------
+
+/**
+ * A chequered flag, hanging from a staff at (x, y) and flying to the right —
+ * or to the left, if `w` is negative.
+ *
+ * The cloth ripples, so it cannot be a rectangle with a pattern on top: the
+ * whole flag is a strip of quads following one wave, painted light first and
+ * then only its dark squares, which keeps the background from showing through
+ * anywhere the two colours meet.
+ */
+export function chequeredFlagShapes(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  degrees = 0,
+  light = '#FFFFFF',
+  dark = '#20242C',
+  cols = 8,
+  rows = 4,
+): Shape[] {
+  const wave = (t: number) => Math.sin(t * Math.PI * 2.1 + 0.6) * h * 0.16;
+  const cell = h / rows;
+  const corner = (col: number, row: number): [number, number] => {
+    const t = col / cols;
+    return [x + t * w, y + wave(t) - wave(0) + t * h * 0.08 + row * cell];
+  };
+  const cloth: PathCmd[] = [];
+  for (let col = 0; col <= cols; col++) {
+    const [px, py] = corner(col, 0);
+    cloth.push(col === 0 ? { c: 'M', x: px, y: py } : { c: 'L', x: px, y: py });
+  }
+  for (let col = cols; col >= 0; col--) {
+    const [px, py] = corner(col, rows);
+    cloth.push({ c: 'L', x: px, y: py });
+  }
+  cloth.push({ c: 'Z' });
+
+  const out: Shape[] = [{ k: 'path', cmds: rotated(cloth, x, y, degrees), fill: light }];
+  for (let col = 0; col < cols; col++) {
+    for (let row = 0; row < rows; row++) {
+      if ((col + row) % 2 === 0) continue;
+      const quad = [corner(col, row), corner(col + 1, row), corner(col + 1, row + 1), corner(col, row + 1)];
+      out.push({
+        k: 'path',
+        cmds: rotated(
+          quad.map(([px, py], i): PathCmd => ({ c: i === 0 ? 'M' : 'L', x: px, y: py })).concat([{ c: 'Z' }]),
+          x,
+          y,
+          degrees,
+        ),
+        fill: dark,
+      });
+    }
+  }
+  return out;
+}
+
+/** A steering wheel seen head on: rim, three spokes and a hub. */
+export function steeringWheelShapes(cx: number, cy: number, r: number, rim: string, hub: string): Shape[] {
+  const out: Shape[] = [];
+  // Two spokes falling away from the horizontal and one straight down.
+  for (const deg of [160, 20, 90]) {
+    const a = (deg * Math.PI) / 180;
+    out.push({
+      k: 'line',
+      x1: cx,
+      y1: cy,
+      x2: cx + Math.cos(a) * r,
+      y2: cy + Math.sin(a) * r,
+      stroke: rim,
+      sw: r * 0.17,
+      round: true,
+    });
+  }
+  out.push(
+    { k: 'circle', cx, cy, r, stroke: rim, sw: r * 0.22 },
+    { k: 'path', cmds: arcPath(cx, cy, r * 1.02), stroke: '#FFFFFF', sw: r * 0.06, opacity: 0.45 },
+    { k: 'circle', cx, cy, r: r * 0.34, fill: rim },
+    { k: 'circle', cx, cy, r: r * 0.22, fill: hub },
+  );
+  return out;
+}
+
+/** A traffic cone standing on its base. */
+export function coneShapes(cx: number, baseY: number, h: number, body: string, band = '#FFFFFF'): Shape[] {
+  // Half-width at height t, from the foot of the cone (0) to its tip (1).
+  const hw = (t: number) => h * (0.3 - t * 0.21);
+  const yAt = (t: number) => baseY - h * t;
+  const ring = (t0: number, t1: number): Shape => ({
+    k: 'path',
+    cmds: [
+      { c: 'M', x: cx - hw(t0), y: yAt(t0) },
+      { c: 'L', x: cx + hw(t0), y: yAt(t0) },
+      { c: 'L', x: cx + hw(t1), y: yAt(t1) },
+      { c: 'L', x: cx - hw(t1), y: yAt(t1) },
+      { c: 'Z' },
+    ],
+    fill: band,
+  });
+  return [
+    { k: 'path', cmds: roundedRectPath(cx - h * 0.42, baseY - h * 0.1, h * 0.84, h * 0.1, h * 0.03), fill: shade(body, 0.25) },
+    {
+      k: 'path',
+      cmds: [
+        { c: 'M', x: cx - hw(0), y: yAt(0.02) },
+        { c: 'L', x: cx - hw(0.94), y: yAt(0.94) },
+        { c: 'Q', x1: cx, y1: yAt(1.06), x: cx + hw(0.94), y: yAt(0.94) },
+        { c: 'L', x: cx + hw(0), y: yAt(0.02) },
+        { c: 'Z' },
+      ],
+      fill: body,
+    },
+    ring(0.42, 0.58),
+  ];
+}
+
+/** A traffic light on its post, all three lamps lit. */
+export function trafficLightShapes(cx: number, baseY: number, h: number, post: string, box: string): Shape[] {
+  const boxH = h * 0.42;
+  const w = h * 0.3;
+  const top = baseY - h;
+  return [
+    { k: 'rect', x: cx - h * 0.035, y: top + boxH * 0.7, w: h * 0.07, h: h - boxH * 0.7, fill: post },
+    { k: 'path', cmds: roundedRectPath(cx - w / 2, top, w, boxH, w * 0.22), fill: box },
+    ...['#E8503A', '#F5C518', '#4CC66A'].map((color, i): Shape => ({
+      k: 'circle',
+      cx,
+      cy: top + boxH * (0.2 + i * 0.3),
+      r: w * 0.2,
+      fill: color,
+    })),
+  ];
 }

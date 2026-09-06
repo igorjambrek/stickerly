@@ -1,5 +1,5 @@
 /**
- * The six album themes.
+ * The seven album themes.
  *
  * A theme owns its colours, its album-page look and its list of covers. The
  * covers themselves live in `covers.ts`, because there are twenty-odd of them
@@ -25,11 +25,14 @@ import {
   pawShapes,
   pencilShapes,
   planetShapes,
+  roundedRectPath,
   sparklePath,
   starPath,
 } from './shapes.ts';
+import { carShapes } from './figures.ts';
 import { gradientBands, tint } from './motifs.ts';
 import {
+  carsVariants,
   classVariants,
   dinoVariants,
   footballVariants,
@@ -199,6 +202,50 @@ const dinos: Template = {
 };
 
 // ---------------------------------------------------------------------------
+// Аутомобили / Cars
+// ---------------------------------------------------------------------------
+
+const carsPalette: Palette = {
+  coverBg: '#8E1420',
+  coverAccent: '#F2C230',
+  insideBg: '#FBF4F2',
+  plaque: '#FFFFFF',
+  plaqueEdge: '#F2C230',
+  plaqueInk: '#5E0D18',
+  pageBg: '#F9F6F4',
+  pageInk: '#3A2B2E',
+  frame: '#3B4250',
+  badge: '#C21F30',
+  badgeInk: '#FFFFFF',
+  label: '#3A2B2E',
+};
+
+const cars: Template = {
+  id: 'cars',
+  group: 'action',
+  name: { 'sr-Cyrl': 'Аутомобили', 'sr-Latn': 'Automobili', en: 'Cars', ru: 'Машины' },
+  emoji: '🚗',
+  palette: carsPalette,
+  coverArt: carsVariants[0]!.coverArt!,
+  backArt: carsVariants[0]!.backArt!,
+  insideArt: insideArtOf('#C21F30', (rng, size) =>
+    scatter(rng, 7, size, 36, (x, y, r) => carShapes(x, y, r.range(24, 34), '#C21F30', { glass: '#C21F30', tyre: '#C21F30', rim: '#C21F30' })),
+  ),
+  pageArt: pageArtFor(
+    carsPalette,
+    // The car drives off the outer edge, so a spread reads outwards.
+    (x, y, mirrored) => carShapes(x, y - 1, 30, '#C21F30', { glass: '#8E1420', facing: mirrored ? -1 : 1 }),
+    (rng, size) =>
+      scatter(rng, 13, size, 16, (x, y, r) => ({
+        k: 'path',
+        cmds: roundedRectPath(x, y, r.range(5, 9), 1.3, 0.65),
+        fill: '#3B4250',
+      })),
+  ),
+  variants: carsVariants,
+};
+
+// ---------------------------------------------------------------------------
 // Једнорози / Unicorns
 // ---------------------------------------------------------------------------
 
@@ -319,7 +366,7 @@ const myClass: Template = {
 
 // ---------------------------------------------------------------------------
 
-export const TEMPLATES: readonly Template[] = [football, space, dinos, unicorns, pets, myClass];
+export const TEMPLATES: readonly Template[] = [football, space, dinos, cars, unicorns, pets, myClass];
 
 export const DEFAULT_TEMPLATE_ID = 'football';
 
