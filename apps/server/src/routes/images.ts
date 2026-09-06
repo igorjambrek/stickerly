@@ -89,8 +89,18 @@ export function imageRoutes(repo: Repo, live: Realtime, pictures: Pictures) {
         // Serbian is spelled in Serbian, and the pictures are labelled in
         // English. The editor shows the difference rather than hiding it, and
         // asks for later pages using that spelling rather than the original.
-        const found = await pictures.search(req.query.q ?? '', langOf(req.query.lang), pageOf(req.query.page));
-        return { provider: pictures.provider, ...found };
+        try {
+          const found = await pictures.search(req.query.q ?? '', langOf(req.query.lang), pageOf(req.query.page));
+          return { provider: pictures.provider, ...found };
+        } catch (error) {
+          // A search that fails is a sentence the child reads and forgets, and
+          // nothing else records it — these are 4xx, and the catch-all only
+          // logs the 500s. But a provider being slow or unreachable is exactly
+          // the report that arrives as "it said something went wrong", so the
+          // one line that makes it diagnosable belongs here.
+          req.log.warn({ err: error, q: req.query.q }, 'picture search failed');
+          throw error;
+        }
       },
     );
 

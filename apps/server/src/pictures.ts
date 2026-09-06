@@ -55,17 +55,46 @@ interface Provider {
   search(query: string, lang: Lang, page: number): Promise<Page>;
 }
 
-/** Talking to a provider is a normal fetch: a fixed host we picked ourselves. */
+/**
+ * Talking to a provider is a normal fetch: a fixed host we picked ourselves.
+ *
+ * Every way it can go wrong ends as an `Invalid`, which is a sentence the child
+ * reads. Two of those ways are not the status code: a provider that is slow or
+ * unreachable rejects the fetch itself — a `TimeoutError` from our own deadline,
+ * or a `TypeError` from a dead socket — and one that answers an error page
+ * instead of JSON rejects the parse. Neither is an `Invalid`, so letting either
+ * go means the catch-all in `app.ts` calls it `server error`, which blames this
+ * server for somebody else's bad afternoon and reads, to the child in front of
+ * it, as the whole app being broken rather than a shelf being empty.
+ *
+ * The reason is kept in the message on purpose — a status, a word for the
+ * failure — because it is the one clue anybody debugging a dead provider will
+ * have, and this is rare enough that a child seeing it means something is
+ * actually wrong. The original is kept as the `cause` for the log.
+ */
 async function getJson(url: string): Promise<Record<string, unknown>> {
-  const res = await fetch(url, {
-    headers: { accept: 'application/json', 'user-agent': config.pictures.userAgent },
-    signal: AbortSignal.timeout(config.pictures.timeoutMs),
-  });
-  // The status is kept in the message on purpose: it is the one clue anybody
-  // debugging a dead provider will have, and this is rare enough that a child
-  // seeing it means something is actually wrong.
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { accept: 'application/json', 'user-agent': config.pictures.userAgent },
+      signal: AbortSignal.timeout(config.pictures.timeoutMs),
+    });
+  } catch (error) {
+    // Our own deadline aborts with `TimeoutError`; a caller-cancelled request
+    // would be `AbortError`, and there is nobody here to cancel one.
+    const slow = (error as Error | undefined)?.name === 'TimeoutError';
+    throw new Invalid(`the picture search is not answering (${slow ? 'too slow' : 'unreachable'})`, {
+      cause: error,
+    });
+  }
+
   if (!res.ok) throw new Invalid(`the picture search is not answering (${res.status})`);
-  return (await res.json()) as Record<string, unknown>;
+
+  try {
+    return (await res.json()) as Record<string, unknown>;
+  } catch (error) {
+    throw new Invalid('the picture search is not answering (not an answer we can read)', { cause: error });
+  }
 }
 
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
@@ -299,6 +328,12 @@ export interface Pictures {
  * the better one. A rename that finds nothing either is a rename worth
  * forgetting, so the child is told what they asked rather than what we
  * guessed. Always page one: the swap is only ever tried on a first search.
+ *
+ * And a rename that *fails* is worth forgetting on exactly the same terms. This
+ * is a second guess at a question already answered — for Serbian and Russian it
+ * runs even when the first search came back full — so a provider that answered
+ * a moment ago and does not now must leave the child with the shelf they
+ * already have, not with an error in place of it.
  */
 async function trySwap(
   provider: Provider,
@@ -307,7 +342,14 @@ async function trySwap(
   canonical: string | null,
 ): Promise<{ asked: string; hits: RawHit[]; hasMore: boolean } | null> {
   if (!canonical || canonical.toLowerCase() === query.toLowerCase()) return null;
-  const page = await provider.search(canonical, lang, 1);
+
+  let page: Page;
+  try {
+    page = await provider.search(canonical, lang, 1);
+  } catch {
+    return null;
+  }
+
   return page.hits.length > 0 ? { asked: canonical, hits: page.hits, hasMore: page.hasMore } : null;
 }
 

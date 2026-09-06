@@ -589,6 +589,96 @@ describe('a name that was spelled the way it sounded', () => {
   });
 });
 
+/**
+ * When the provider itself falls over.
+ *
+ * Openverse is somebody else's server, and it is slow, rate-limited and
+ * occasionally unreachable — a search that ends in a rename asks it twice, so
+ * a Serbian or Russian query is exposed to that twice over. Two things must
+ * not happen when it does. The child must not be told `server error`, which is
+ * what the catch-all in `app.ts` says about anything that is not an `Invalid`
+ * and which reads as this app being broken. And a shelf that was already
+ * found must survive the second, optional search failing.
+ */
+describe('a provider having a bad afternoon', () => {
+  const timeout = () => new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+
+  /** Wikipedia renames the query, so the provider is asked a second time. */
+  const bridged = (openverse: (q: string) => Response | never) =>
+    (async (input: Parameters<typeof realFetch>[0]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const json = (body: unknown) =>
+        new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+
+      if (url.startsWith('https://api.openverse.org/')) return openverse(new URL(url).searchParams.get('q') ?? '');
+      if (url.startsWith('https://sr.wikipedia.org/')) {
+        return json({ query: { pages: { '1': { title: 'Фолксваген голф', pageprops: { wikibase_item: 'Q1' } } } } });
+      }
+      return json({ entities: { Q1: { sitelinks: { enwiki: { title: 'Volkswagen Golf' } } } } });
+    }) as typeof fetch;
+
+  after(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  /**
+   * `Golf 3`, said out loud in Serbian: the first search finds pictures, the
+   * bridge renames it to `Volkswagen Golf`, and the second search times out.
+   * The child asked once and was found something; losing it to a guess made on
+   * their behalf is the worst of both.
+   */
+  it('keeps the shelf the first search found when the rename cannot be searched', async () => {
+    const asked: string[] = [];
+    globalThis.fetch = bridged((q) => {
+      asked.push(q);
+      if (q !== 'Golf 3') throw timeout();
+      return new Response(JSON.stringify(OPENVERSE_ANSWER), { headers: { 'content-type': 'application/json' } });
+    });
+
+    const found = await createPictures().search('Golf 3', 'sr-Latn');
+
+    assert.deepEqual(asked, ['Golf 3', 'Volkswagen Golf'], 'the rename was never tried');
+    assert.equal(found.results.length, 2, 'a shelf that was already found was thrown away');
+    assert.equal(found.query, 'Golf 3', 'a rename that never came back was reported as the one that found these');
+  });
+
+  /**
+   * And when there is no shelf to fall back on, a sentence about the picture
+   * search — not about this server, which did nothing wrong.
+   */
+  it('blames the picture search, not itself, when the provider is too slow', async () => {
+    globalThis.fetch = bridged(() => {
+      throw timeout();
+    });
+
+    await assert.rejects(
+      () => createPictures().search('Golf 3', 'sr-Latn'),
+      (error: Error) => {
+        assert.match(error.message, /picture search is not answering \(too slow\)/);
+        assert.equal(error.cause instanceof DOMException, true, 'the reason was lost on the way to the log');
+        return true;
+      },
+    );
+  });
+
+  it('says the same when the provider cannot be reached at all', async () => {
+    globalThis.fetch = bridged(() => {
+      throw new TypeError('fetch failed');
+    });
+
+    await assert.rejects(() => createPictures().search('Golf 3', 'sr-Latn'), /not answering \(unreachable\)/);
+  });
+
+  /** A provider that answers an error page instead of JSON, with a 200 on it. */
+  it('says the same when the answer is not an answer', async () => {
+    globalThis.fetch = bridged(
+      () => new Response('<html>we are down</html>', { headers: { 'content-type': 'text/html' } }),
+    );
+
+    await assert.rejects(() => createPictures().search('Golf 3', 'sr-Latn'), /not an answer we can read/);
+  });
+});
+
 describe('the routes', () => {
   let app: FastifyInstance;
   let base: string;
@@ -653,6 +743,33 @@ describe('the routes', () => {
       // Page two of a search already under way, so no wiki call and no
       // renaming — the provider is asked for exactly that page, once.
       assert.deepEqual(pagesAsked, ['2']);
+    } finally {
+      stubProvider();
+    }
+  });
+
+  /**
+   * The whole point of the two guards above, seen from where the child is: a
+   * provider that will not answer produces a sentence about the picture
+   * search, never the catch-all's `server error`.
+   */
+  it('never reports a dead provider as this server failing', async () => {
+    globalThis.fetch = (async (input: Parameters<typeof realFetch>[0], init?: Parameters<typeof realFetch>[1]) => {
+      const url = String(input instanceof Request ? input.url : input);
+      const upstream =
+        url.startsWith('https://api.openverse.org/') ||
+        url.includes('wikipedia.org') ||
+        url.includes('wikidata.org');
+      if (upstream) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      return realFetch(input, init);
+    }) as typeof fetch;
+
+    try {
+      const res = await fetch(`${base}/api/albums/${token}/pictures?q=${encodeURIComponent('Golf 3')}&lang=sr-Latn`);
+      const body = (await res.json()) as { error: string };
+      assert.notEqual(res.status, 500, 'a slow provider was reported as this server failing');
+      assert.notEqual(body.error, 'server error');
+      assert.match(body.error, /picture search/);
     } finally {
       stubProvider();
     }
