@@ -374,9 +374,26 @@ export function getTemplate(id: string): Template {
   return TEMPLATES.find((t) => t.id === id) ?? TEMPLATES.find((t) => t.id === DEFAULT_TEMPLATE_ID)!;
 }
 
+/** A theme this app actually has. An unknown id is never worth guessing at. */
+export const isTemplateId = (v: unknown): boolean => TEMPLATES.some((t) => t.id === v);
+
 /** The child's chosen cover, or the theme's own if the id means nothing here. */
 export function getVariant(template: Template, variantId: string | null | undefined) {
   return template.variants.find((v) => v.id === variantId) ?? template.variants[0]!;
+}
+
+/**
+ * The nearest thing to this cover in another theme.
+ *
+ * Cover ids belong to their theme — there is no `champions` among the dinosaurs
+ * — so changing theme has to choose again. Only one choice means the same thing
+ * in every theme: the child put their own photograph on the front, and every
+ * theme has a cover for that. Anything else lands on the new theme's own cover,
+ * which is what a child picking that theme would have started from.
+ */
+export function carryCover(from: Template, to: Template, variantId: string | null | undefined): string {
+  const photo = coverWantsPhoto(from, variantId) ? to.variants.find((v) => v.photo) : undefined;
+  return (photo ?? to.variants[0]!).id;
 }
 
 /** The palette the four cover panels are painted with: theme colours, variant on top. */

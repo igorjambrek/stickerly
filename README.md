@@ -60,7 +60,8 @@ smaller ones. That is why "how many stickers on a page" is a real choice:
 
 The count is per page and applies to every page. Album size and stickers-per-page
 are both locked at creation — either would add or destroy slots in an album that
-already has photos. The cover can be changed at any time.
+already has photos. The theme and the cover can be changed at any time, from the
+same button: a theme is paint, and repainting moves no sticker.
 
 ---
 
@@ -269,6 +270,15 @@ wash, texture, a scene along the bottom, one emblem at the top — which is why
 they look like a set. Adding a cover is one entry in `covers.ts`. The bands where
 the title plaque and the sticker count sit are left quiet, so artwork can never
 make a title harder to read.
+
+**A theme can be changed after the fact; a size cannot.** A theme decides
+colours and artwork and nothing else, so an album half full of dinosaur stickers
+can become a cars album with every sticker, label and number where it was. It
+lives behind the cover button because the two are one decision: cover ids belong
+to their theme, so a new theme has to choose a cover with it —
+[`carryCover`](packages/shared/src/templates.ts) keeps a photo cover a photo
+cover and otherwise lands on the new theme's own. Size and stickers-per-page stay
+locked, because those destroy slots.
 
 **A cover photo is an ordinary album image**, just kept at higher resolution —
 the upload, token scoping, EXIF stripping and cleanup are machinery that already

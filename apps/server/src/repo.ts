@@ -26,9 +26,11 @@ import {
   DEFAULT_CROP,
   DEFAULT_LANG,
   LANGS,
+  carryCover,
   getTemplate,
   getVariant,
   isAlbumSize,
+  isTemplateId,
   layoutFor,
   renumber,
 } from '@album/shared';
@@ -68,6 +70,13 @@ const normaliseSize = (v: unknown): AlbumSize => (isAlbumSize(v) ? v : DEFAULT_A
 /** A cover id this theme does not have resolves to the theme's own cover. */
 const normaliseVariant = (templateId: string, v: unknown): string =>
   getVariant(getTemplate(templateId), typeof v === 'string' ? v : null).id;
+
+/**
+ * A theme this app does not have leaves the album on the one it already wears.
+ * `getTemplate` would fall back to football, which is the right answer when an
+ * album is being made and the wrong one when it already exists.
+ */
+const normaliseTemplate = (v: unknown, current: string): string => (isTemplateId(v) ? (v as string) : current);
 
 export interface CreateAlbumInput {
   title?: string;
@@ -164,7 +173,7 @@ export function createRepo(db: Db) {
       'UPDATE albums SET title = @title, lang = @lang, owner_name = @ownerName, updated_at = @now WHERE id = @id',
     ),
     updateCover: db.prepare(
-      `UPDATE albums SET cover_variant = @variant, cover_image_id = @imageId,
+      `UPDATE albums SET template_id = @templateId, cover_variant = @variant, cover_image_id = @imageId,
               cover_crop_x = @cropX, cover_crop_y = @cropY, cover_crop_scale = @cropScale, updated_at = @now
        WHERE id = @id`,
     ),
@@ -342,12 +351,25 @@ export function createRepo(db: Db) {
     },
 
     /**
-     * The cover, on the other hand, is meant to be played with: a different
-     * look, a different photo or a different crop, as often as the child likes.
+     * The look, on the other hand, is meant to be played with: a different
+     * theme, a different cover, a different photo or a different crop, as often
+     * as the child likes.
+     *
+     * The theme is here rather than in `update` because it is the same decision
+     * as the cover — which is why the editor asks for both behind one button —
+     * and because the two cannot be set independently: cover ids belong to
+     * their theme, so a new theme has to choose a cover with it. Unlike size,
+     * a theme is only paint: pages, slots, photos and numbers are untouched by
+     * it, so an album full of stickers can change its mind about what it is.
      */
     setCover(
       token: string,
-      patch: { coverVariantId?: unknown; coverImageId?: string | null; coverCrop?: unknown },
+      patch: {
+        templateId?: unknown;
+        coverVariantId?: unknown;
+        coverImageId?: string | null;
+        coverCrop?: unknown;
+      },
     ): void {
       const row = requireAlbumRow(token);
 
@@ -359,12 +381,22 @@ export function createRepo(db: Db) {
           ? { x: row.cover_crop_x, y: row.cover_crop_y, scale: row.cover_crop_scale }
           : normaliseCrop(patch.coverCrop);
 
+      const templateId =
+        patch.templateId === undefined ? row.template_id : normaliseTemplate(patch.templateId, row.template_id);
+
+      // A cover the child named is theirs, in whatever theme it was named for;
+      // otherwise a theme change carries the old cover over as best it can.
+      const variant =
+        patch.coverVariantId !== undefined
+          ? normaliseVariant(templateId, patch.coverVariantId)
+          : templateId === row.template_id
+            ? row.cover_variant
+            : carryCover(getTemplate(row.template_id), getTemplate(templateId), row.cover_variant);
+
       q.updateCover.run({
         id: row.id,
-        variant:
-          patch.coverVariantId === undefined
-            ? row.cover_variant
-            : normaliseVariant(row.template_id, patch.coverVariantId),
+        templateId,
+        variant,
         imageId,
         cropX: crop.x,
         cropY: crop.y,

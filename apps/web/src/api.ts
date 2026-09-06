@@ -116,6 +116,8 @@ export interface MintedCode {
 }
 
 export interface CoverPatch {
+  /** A theme change: the stickers stay, the paint changes. */
+  templateId?: string;
   coverVariantId?: string;
   coverImageId?: string | null;
   coverCrop?: Crop;

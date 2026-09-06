@@ -58,11 +58,14 @@ export function albumRoutes(repo: Repo, live: Realtime) {
 
     /**
      * The cover has its own endpoint because it is the one part of an album a
-     * child is expected to change their mind about, repeatedly.
+     * child is expected to change their mind about, repeatedly — the theme
+     * included, since a theme is only paint and the stickers stay where they
+     * are. Size and stickers-per-page, which would destroy slots, stay locked.
      */
     app.put<{ Params: TokenParams }>('/api/albums/:token/cover', async (req) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       repo.setCover(req.params.token, {
+        templateId: body.templateId,
         coverVariantId: body.coverVariantId,
         coverImageId: body.coverImageId as string | null | undefined,
         coverCrop: body.coverCrop,

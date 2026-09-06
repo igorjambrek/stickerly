@@ -349,6 +349,49 @@ describe('the cover', () => {
     assert.equal(album.coverVariantId, 'moon');
   });
 
+  it('changes the theme and keeps every sticker', async () => {
+    const { token, album: made } = await newAlbum({ templateId: 'dinos' });
+    const image = await uploadCover(token);
+    const slot = made.pages[0]!.slots[0]!;
+    await put(`/api/albums/${token}/slots/${slot.id}`, { imageId: image.id, label: 'Рекс' });
+
+    const album = ((await json(await putCover(token, { templateId: 'cars' }))) as { album: Album }).album;
+
+    assert.equal(album.templateId, 'cars');
+    assert.equal(album.coverVariantId, 'race', 'a dinosaur cover means nothing to the cars theme');
+    assert.equal(allSlots(album).length, allSlots(made).length, 'no slot is added or destroyed');
+    const kept = allSlots(album).find((s) => s.id === slot.id)!;
+    assert.equal(kept.imageId, image.id);
+    assert.equal(kept.label, 'Рекс');
+    assert.equal(kept.number, 1);
+  });
+
+  it('carries a photo cover across a theme change', async () => {
+    const { token } = await newAlbum({ templateId: 'dinos', coverVariantId: 'mydino' });
+    const image = await uploadCover(token);
+    await putCover(token, { coverImageId: image.id });
+
+    const album = ((await json(await putCover(token, { templateId: 'unicorns' }))) as { album: Album }).album;
+
+    assert.equal(album.coverVariantId, 'myunicorn', "the child's own photo is a cover every theme has");
+    assert.equal(album.coverImageId, image.id);
+  });
+
+  it('takes a new theme and one of its covers in the same breath', async () => {
+    const { token } = await newAlbum({ templateId: 'space' });
+    const res = await putCover(token, { templateId: 'football', coverVariantId: 'worldcup' });
+    const album = ((await json(res)) as { album: Album }).album;
+    assert.equal(album.templateId, 'football');
+    assert.equal(album.coverVariantId, 'worldcup');
+  });
+
+  it('leaves the album on its own theme when the new one does not exist', async () => {
+    const { token } = await newAlbum({ templateId: 'pets' });
+    const album = ((await json(await putCover(token, { templateId: 'pirates' }))) as { album: Album }).album;
+    assert.equal(album.templateId, 'pets', 'an unknown theme is not a reason to repaint the album');
+    assert.equal(album.coverVariantId, 'paws');
+  });
+
   it('puts a photo on the cover, and frames it', async () => {
     const { token } = await newAlbum({ templateId: 'pets', coverVariantId: 'mypet' });
     const image = await uploadCover(token);
