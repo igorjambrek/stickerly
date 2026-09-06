@@ -8,8 +8,8 @@
  *
  * Like the PDF, the page is drawn in two coordinate systems: artwork and
  * chrome in reference millimetres scaled to the page, and the sticker grid in
- * real millimetres, because a slot is a physical 50 x 70 mm window whatever
- * size the album is.
+ * real millimetres, because a slot is a physical 50 x 70 mm window — or the
+ * same window on its side — whatever size the album is.
  *
  * Two of these sit side by side in the editor, because that is how many pages
  * a child sees when the album is open.
@@ -21,15 +21,16 @@ import type { Album, Page, PageLayout, Slot, Template } from '@album/shared';
 import {
   FOOTER_Y,
   REF_PAGE,
-  STICKER,
   STICKER_RADIUS,
   artRng,
-  coverPlacement,
   getAvatar,
   pageHeaderRect,
+  slotSpanOf,
+  stickerSize,
 } from '@album/shared';
 import { api } from '../api.ts';
 import { useT } from '../lang.ts';
+import { FramedPhoto } from './FramedPhoto.tsx';
 import { ShapeCanvas } from './ShapeCanvas.tsx';
 
 interface SlotViewProps {
@@ -50,14 +51,12 @@ function SlotView({ slot, album, layout, template, token, onOpen, onDropFile }: 
     album.members.length > 1 ? album.members.find((m) => m.id === slot.filledBy) : undefined;
   /** Millimetres as a share of the page width, for anything that must scale with it. */
   const cq = (mm: number) => `${(mm / layout.page.w) * 100}cqw`;
-  const box = layout.slotRect(slot.position);
-  const label = layout.slotLabelRect(slot.position);
+  // One cell, or the two a turned sticker took. Same call the PDF makes.
+  const span = slotSpanOf(layout, slot.position, slot.orientation);
   const image = slot.imageId ? album.images.find((i) => i.id === slot.imageId) : undefined;
 
   const draggable = useDraggable({ id: slot.id, disabled: !slot.imageId });
   const droppable = useDroppable({ id: slot.id });
-
-  const photo = image ? coverPlacement({ x: 0, y: 0, w: STICKER.w, h: STICKER.h }, image.w, image.h, slot.crop) : null;
 
   const handleFile = (event: DragEvent) => {
     event.preventDefault();
@@ -72,6 +71,9 @@ function SlotView({ slot, album, layout, template, token, onOpen, onDropFile }: 
    * slot is precisely the one a child needs to click.
    */
   const dragProps = slot.imageId ? { ...draggable.listeners, ...draggable.attributes } : {};
+
+  if (!span) return null;
+  const { rect: box, label } = span;
 
   const classes = [
     'slot',
@@ -107,18 +109,14 @@ function SlotView({ slot, album, layout, template, token, onOpen, onDropFile }: 
       aria-label={`${slot.number}${slot.label ? ` ${slot.label}` : ''}`}
     >
       <span className="slot__frame" style={{ borderRadius: cq(STICKER_RADIUS), borderWidth: cq(0.5) }}>
-        {photo && image ? (
-          <img
+        {image ? (
+          <FramedPhoto
             className="slot__photo"
+            box={stickerSize(slot.orientation)}
             src={api.imageUrl(token, image.id, 'thumb')}
-            alt=""
-            draggable={false}
-            style={{
-              left: `${(photo.x / STICKER.w) * 100}%`,
-              top: `${(photo.y / STICKER.h) * 100}%`,
-              width: `${(photo.w / STICKER.w) * 100}%`,
-              height: `${(photo.h / STICKER.h) * 100}%`,
-            }}
+            width={image.w}
+            height={image.h}
+            crop={slot.crop}
           />
         ) : (
           <span className="slot__plus" style={{ fontSize: cq(10) }}>

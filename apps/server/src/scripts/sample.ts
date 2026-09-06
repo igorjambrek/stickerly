@@ -18,9 +18,10 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PDFDocument } from 'pdf-lib';
-import type { AlbumSize, Lang } from '@album/shared';
+import type { AlbumSize, Lang, NumberSide } from '@album/shared';
 import {
   DEFAULT_ALBUM_SIZE,
+  DEFAULT_NUMBER_SIDE,
   PAPER_NAME,
   REF_PAGE,
   TEMPLATES,
@@ -113,6 +114,9 @@ if (process.argv[2] === 'covers') {
   const size: AlbumSize = isAlbumSize(sizeArg) ? sizeArg : DEFAULT_ALBUM_SIZE;
   const layout = layoutFor(size, Number(process.argv[5]));
   const lang = (process.argv[6] ?? 'sr-Cyrl') as Lang;
+  // Where the numbers go is a choice at print time, so the sample takes it the
+  // same way the dialog does — by name, from anywhere in the line.
+  const numbers: NumberSide = process.argv.includes('sticker') ? 'sticker' : DEFAULT_NUMBER_SIDE;
 
   const album = makeFixtureAlbum({
     templateId,
@@ -128,9 +132,9 @@ if (process.argv[2] === 'covers') {
   const loadImage = fixtureImageLoader();
 
   const started = Date.now();
-  const cover = await buildCoverPdf({ album, loadImage });
-  const pages = await buildPagesPdf({ album, loadImage });
-  const stickers = await buildStickersPdf({ album, loadImage });
+  const cover = await buildCoverPdf({ album, loadImage, numbers });
+  const pages = await buildPagesPdf({ album, loadImage, numbers });
+  const stickers = await buildStickersPdf({ album, loadImage, numbers });
 
   await writeFile(path.join(OUT, 'cover.pdf'), cover);
   await writeFile(path.join(OUT, 'pages.pdf'), pages.bytes);
@@ -140,6 +144,9 @@ if (process.argv[2] === 'covers') {
   console.log(`format   : ${PAPER_NAME[size]} sheets, ${layout.page.w} x ${layout.page.h} mm pages, ${layout.slotsPerPage} per page`);
   console.log(`cover    : ${kb(cover)}  -> tmp/cover.pdf`);
   console.log(`pages    : ${kb(pages.bytes)}  -> tmp/pages.pdf   (${pages.fillerCount} filler pages added)`);
-  console.log(`stickers : ${kb(stickers.bytes)}  -> tmp/stickers.pdf   (${stickers.stickerCount} stickers on ${stickers.sheetCount} sheets)`);
+  const numbersOn = numbers === 'backing' ? 'numbers on the backing' : 'numbers on the picture';
+  console.log(
+    `stickers : ${kb(stickers.bytes)}  -> tmp/stickers.pdf   (${stickers.stickerCount} stickers on ${stickers.sheetCount} sheets, ${numbersOn})`,
+  );
   console.log(`done in ${Date.now() - started} ms`);
 }

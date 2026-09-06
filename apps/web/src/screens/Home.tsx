@@ -5,18 +5,32 @@
  * cover, then how big the book is, then whose name goes on it — and the cover
  * preview beside them updates on every one of them, so a child is choosing
  * between pictures rather than between words.
+ *
+ * The third of them has grown a middle question: standing stickers or lying
+ * ones. It sits between the paper and the count because that is the order they
+ * decide each other in — paper and turn together decide which counts can be
+ * printed at all, so a count is offered only once both are known, and a count
+ * the new shape cannot print snaps to one it can.
+ *
+ * Unlike the paper and the count, this one is only a starting point. It sets
+ * the shape of the cells and of every sticker made in them; a child who later
+ * wants one wide sticker for the whole team turns that one inside the album,
+ * where they can see what it costs.
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AlbumSize, Lang, Template } from '@album/shared';
+import type { AlbumSize, Lang, PageLayout, StickerOrientation, Template } from '@album/shared';
 import {
   ALBUM_SIZES,
+  DEFAULT_ORIENTATION,
   DEFAULT_SLOTS_PER_PAGE,
-  GRID_CHOICES,
   PAPER_NAME,
+  STICKER_ORIENTATIONS,
   TEMPLATES,
   getAvatar,
+  gridChoices,
   layoutFor,
+  pageHeaderRect,
 } from '@album/shared';
 import { api } from '../api.ts';
 import { readDeviceKey } from '../deviceKey.ts';
@@ -82,42 +96,32 @@ function TemplateCard({
  * The choice, at a glance: an open album, because the count is per page and an
  * open album is two pages. Drawing one page here is what made a child expect
  * nine stickers where the finished book gives them eighteen.
+ *
+ * Every rectangle is asked of the layout rather than guessed at, so the glyph
+ * is a true miniature of the page that gets printed — which is the only way a
+ * picture of nine standing slots and a picture of eight lying ones can be
+ * compared honestly.
  */
-function SpreadGlyph({ cols, rows, size }: { cols: number; rows: number; size: AlbumSize }) {
-  const page = layoutFor(size, cols * rows).page;
+function SpreadGlyph({ layout }: { layout: PageLayout }) {
+  const { page } = layout;
+  const header = pageHeaderRect();
   const gutter = 6;
-  const gap = 8;
-  const cellW = 50;
-  const cellH = 76;
-  const blockW = cols * cellW + (cols - 1) * gap;
-  const blockH = rows * cellH + (rows - 1) * 6;
-  const slots = Array.from({ length: cols * rows }, (_, i) => ({
-    x: (page.w - blockW) / 2 + (i % cols) * (cellW + gap),
-    y: (page.h - blockH) / 2 + Math.floor(i / cols) * (cellH + 6),
-  }));
+  const slots = Array.from({ length: layout.slotsPerPage }, (_, i) => layout.slotRect(i));
   return (
     <svg className="gridglyph" viewBox={`0 0 ${page.w * 2 + gutter} ${page.h}`} aria-hidden="true">
       {[0, page.w + gutter].map((originX) => (
         <g key={originX} transform={`translate(${originX} 0)`}>
           <rect x="0" y="0" width={page.w} height={page.h} rx="6" className="gridglyph__page" />
           <rect
-            x={page.w * 0.25}
-            y={page.h * 0.055}
-            width={page.w * 0.5}
-            height={page.h * 0.028}
+            x={(header.x + header.w * 0.25) * layout.scale}
+            y={header.y * layout.scale}
+            width={header.w * 0.5 * layout.scale}
+            height={header.h * 0.55 * layout.scale}
             rx="2"
             className="gridglyph__bar"
           />
           {slots.map((slot, i) => (
-            <rect
-              key={i}
-              x={slot.x}
-              y={slot.y}
-              width={cellW}
-              height={cellH - 6}
-              rx="3"
-              className="gridglyph__slot"
-            />
+            <rect key={i} x={slot.x} y={slot.y} width={slot.w} height={slot.h} rx="3" className="gridglyph__slot" />
           ))}
         </g>
       ))}
@@ -148,7 +152,8 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
   const [templateId, setTemplateId] = useState<string>(TEMPLATES[0]!.id);
   const [variantId, setVariantId] = useState<string>(TEMPLATES[0]!.variants[0]!.id);
   const [size, setSize] = useState<AlbumSize>('a3');
-  const [slotsPerPage, setSlotsPerPage] = useState<number>(DEFAULT_SLOTS_PER_PAGE.a3);
+  const [orientation, setOrientation] = useState<StickerOrientation>(DEFAULT_ORIENTATION);
+  const [slotsPerPage, setSlotsPerPage] = useState<number>(DEFAULT_SLOTS_PER_PAGE[DEFAULT_ORIENTATION].a3);
   const [title, setTitle] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [coverFile, setCoverFile] = useState<File | null>(null);
@@ -202,17 +207,19 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
     : localRecent;
 
   const chosen = TEMPLATES.find((x) => x.id === templateId)!;
-  const layout = layoutFor(size, slotsPerPage);
+  const layout = layoutFor(size, slotsPerPage, orientation);
 
   // A different theme means a different set of covers.
   useEffect(() => {
     setVariantId(chosen.variants[0]!.id);
   }, [chosen]);
 
-  // A slot count the new paper cannot print snaps to one it can.
+  // A slot count the new paper — or the new shape of sticker — cannot print
+  // snaps to one it can, rather than leaving a card selected that is no longer
+  // on the row.
   useEffect(() => {
-    setSlotsPerPage((current) => layoutFor(size, current).slotsPerPage);
-  }, [size]);
+    setSlotsPerPage((current) => layoutFor(size, current, orientation).slotsPerPage);
+  }, [size, orientation]);
 
   useEffect(() => () => {
     if (photoUrl.current) URL.revokeObjectURL(photoUrl.current);
@@ -261,6 +268,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
         templateId,
         coverVariantId: variantId,
         size,
+        stickerOrientation: orientation,
         slotsPerPage,
         title: title.trim(),
         ownerName: ownerName.trim(),
@@ -364,7 +372,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
             <Step n={3} title={t('home.pickSize')} hint={t('home.sizeNote')} />
             <div className="sizegrid">
               {ALBUM_SIZES.map((option) => {
-                const preview = layoutFor(option, DEFAULT_SLOTS_PER_PAGE[option]);
+                const preview = layoutFor(option, undefined, orientation);
                 return (
                   <button
                     key={option}
@@ -392,9 +400,36 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
               })}
             </div>
 
+            <h3 className="group__name">{t('home.pickOrientation')}</h3>
+            <div className="turngrid">
+              {STICKER_ORIENTATIONS.map((option) => {
+                const shape = layoutFor(size, undefined, option).sticker;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    className="turncard"
+                    aria-pressed={orientation === option}
+                    onClick={() => setOrientation(option)}
+                  >
+                    {/* The sticker itself, both at true relative scale: one is the other turned. */}
+                    <span className="turncard__paper">
+                      <span
+                        className="turncard__sticker"
+                        style={{ height: `${(shape.h / 70) * 100}%`, aspectRatio: `${shape.w} / ${shape.h}` }}
+                      />
+                    </span>
+                    <strong>{t(`home.orientation.${option}`)}</strong>
+                    <span className="sizecard__hint">{t(`home.orientation.${option}Hint`)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="hint">{t('home.orientationNote')}</p>
+
             <h3 className="group__name">{t('home.pickPerPage')}</h3>
             <div className="pergrid">
-              {GRID_CHOICES[size].map((choice) => (
+              {gridChoices(size, orientation).map((choice) => (
                 <button
                   key={choice.perPage}
                   type="button"
@@ -402,7 +437,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
                   aria-pressed={slotsPerPage === choice.perPage}
                   onClick={() => setSlotsPerPage(choice.perPage)}
                 >
-                  <SpreadGlyph cols={choice.cols} rows={choice.rows} size={size} />
+                  <SpreadGlyph layout={layoutFor(size, choice.perPage, orientation)} />
                   <span>{t('home.perPage', { n: choice.perPage })}</span>
                   <span className="percard__open">{t('home.perPageOpen', { m: choice.perPage * 2 })}</span>
                 </button>

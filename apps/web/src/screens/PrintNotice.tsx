@@ -13,7 +13,7 @@ import type { Album } from '@album/shared';
 import { getTemplate, printShopNote } from '@album/shared';
 import { api, type PrintSummary } from '../api.ts';
 import { useLangStore, useT } from '../lang.ts';
-import { PART_LOOK, printParts } from '../printing.ts';
+import { PART_LOOK, printOptionsFromSearch, printParts } from '../printing.ts';
 
 export function PrintNotice({ token, onBack }: { token: string; onBack: () => void }) {
   const t = useT();
@@ -70,7 +70,10 @@ export function PrintNotice({ token, onBack }: { token: string; onBack: () => vo
     );
   }
 
-  const parts = printParts(t, summary, album.title, album.lang);
+  // The dialog that sent this link decided where the numbers go; the address
+  // is the only thing that came along with it.
+  const opts = printOptionsFromSearch(window.location.search);
+  const parts = printParts(t, summary, album.title, album.lang, opts);
   const shopNote = printShopNote(t, parts);
   const accent = getTemplate(album.templateId).palette.badge;
 
@@ -115,13 +118,16 @@ export function PrintNotice({ token, onBack }: { token: string; onBack: () => vo
           <a
             className="btn btn--primary"
             style={{ background: accent }}
-            href={api.printUrl(token, info.part)}
+            href={api.printUrl(token, info.part, opts)}
             download={info.file}
           >
             {t('print.download')}
           </a>
         </div>
       ))}
+
+      {/* The one file whose second side is not obvious from looking at it. */}
+      {opts.numbers === 'backing' && <p className="notice__body">{t('print.step.stickerBacks')}</p>}
 
       <h2 className="notice__section">{t('print.noticeFinish')}</h2>
       <p className="notice__body">{t('print.shop.finish')}</p>

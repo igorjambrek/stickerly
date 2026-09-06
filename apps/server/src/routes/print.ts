@@ -6,8 +6,18 @@
  * is decided here and in the pdf module, never by the child.
  */
 
-import type { FastifyInstance, FastifyReply } from 'fastify';
-import { PAPER_NAME, STICKER_PAPER, countFilled, fillerPagesNeeded, printFileName, printSheetCounts } from '@album/shared';
+import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import type { NumberSide } from '@album/shared';
+import {
+  DEFAULT_NUMBER_SIDE,
+  PAPER_NAME,
+  STICKER_PAPER,
+  countFilled,
+  fillerPagesNeeded,
+  isNumberSide,
+  printFileName,
+  printSheetCounts,
+} from '@album/shared';
 import type { Repo } from '../repo.ts';
 import { readPrintImage } from '../storage.ts';
 import { buildCoverPdf, buildPagesPdf, buildStickersPdf } from '../pdf/index.ts';
@@ -15,6 +25,19 @@ import { buildCoverPdf, buildPagesPdf, buildStickersPdf } from '../pdf/index.ts'
 interface TokenParams {
   token: string;
 }
+
+/**
+ * Where this job wants its sticker numbers, from the query string.
+ *
+ * A print job is not part of the album — the same album prints either way —
+ * so the choice arrives with the request rather than being stored, and every
+ * one of the three files is asked, because the cover tells a child where to
+ * look for a number and each PDF's metadata counts its own sides.
+ */
+const numbersFrom = (req: FastifyRequest): NumberSide => {
+  const asked = (req.query as Record<string, unknown>)?.numbers;
+  return isNumberSide(asked) ? asked : DEFAULT_NUMBER_SIDE;
+};
 
 function sendPdf(reply: FastifyReply, bytes: Uint8Array, filename: string): FastifyReply {
   return reply
@@ -58,20 +81,20 @@ export function printRoutes(repo: Repo) {
 
     app.get<{ Params: TokenParams }>('/api/albums/:token/print/cover.pdf', async (req, reply) => {
       const input = inputFor(req.params.token);
-      const bytes = await buildCoverPdf(input);
+      const bytes = await buildCoverPdf({ ...input, numbers: numbersFrom(req) });
       return sendPdf(reply, bytes, printFileName(input.album.title, 'cover', input.album.lang));
     });
 
     app.get<{ Params: TokenParams }>('/api/albums/:token/print/pages.pdf', async (req, reply) => {
       const input = inputFor(req.params.token);
-      const result = await buildPagesPdf(input);
+      const result = await buildPagesPdf({ ...input, numbers: numbersFrom(req) });
       return sendPdf(reply, result.bytes, printFileName(input.album.title, 'pages', input.album.lang));
     });
 
     app.get<{ Params: TokenParams }>('/api/albums/:token/print/stickers.pdf', async (req, reply) => {
       const input = inputFor(req.params.token);
       const layout = (req.query as Record<string, unknown>)?.layout === 'safe' ? ('safe' as const) : ('full' as const);
-      const result = await buildStickersPdf({ ...input, layout });
+      const result = await buildStickersPdf({ ...input, layout, numbers: numbersFrom(req) });
       return sendPdf(reply, result.bytes, printFileName(input.album.title, 'stickers', input.album.lang));
     });
   };

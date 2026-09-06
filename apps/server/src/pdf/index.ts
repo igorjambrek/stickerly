@@ -6,8 +6,9 @@
  */
 
 import { PDFDocument, type PDFImage } from 'pdf-lib';
-import type { Album, PrintPart, SheetLayoutName } from '@album/shared';
+import type { Album, NumberSide, PrintPart, SheetLayoutName } from '@album/shared';
 import {
+  DEFAULT_NUMBER_SIDE,
   coverArtOf,
   coverBackArtOf,
   coverInsideArtOf,
@@ -31,6 +32,12 @@ export interface PrintInput {
   /** Print-resolution bytes for an image id, or null if it has gone missing. */
   loadImage: (imageId: string) => Promise<Buffer | null>;
   layout?: SheetLayoutName;
+  /**
+   * Where the sticker numbers go. It reaches all three builders, not only the
+   * sticker sheet: the cover tells a child how to find a sticker's number, and
+   * every PDF's metadata says how many sides its own paper wants.
+   */
+  numbers?: NumberSide;
 }
 
 const isPng = (b: Buffer) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47;
@@ -50,6 +57,7 @@ async function makeContext(
 ): Promise<PrintContext> {
   // Numbering is derived, never trusted from storage.
   const album: Album = { ...input.album, pages: renumber(input.album.pages) };
+  const numbers = input.numbers ?? DEFAULT_NUMBER_SIDE;
   const template = getTemplate(album.templateId);
   const fonts = await embedFonts(doc);
   const t = translator(album.lang);
@@ -76,12 +84,12 @@ async function makeContext(
   // A print shop is handed the file and not the dialog that explained it, so
   // the paper, the sheet count and the duplex setting ride along in the
   // document's own properties, where any PDF viewer will show them.
-  doc.setSubject(describeAlbumPart(t, part, album).specLine);
+  doc.setSubject(describeAlbumPart(t, part, album, { numbers }).specLine);
 
   return {
     album,
     template,
-    layout: layoutFor(album.size, album.slotsPerPage),
+    layout: layoutFor(album.size, album.slotsPerPage, album.stickerOrientation),
     palette: template.palette,
     cover: {
       palette: coverPalette(template, album.coverVariantId),
@@ -90,6 +98,7 @@ async function makeContext(
       inside: coverInsideArtOf(template, album.coverVariantId),
       image: coverImage,
     },
+    numbers,
     fonts,
     t,
     images,
@@ -126,6 +135,8 @@ export async function buildStickersPdf(input: PrintInput): Promise<StickersResul
   const doc = await PDFDocument.create();
   const ctx = await makeContext(doc, input, 'stickers', { stickerPhotos: true });
   const sheetCount = renderStickers(doc, ctx, input.layout ?? 'full');
+  // Sheets of paper, not PDF pages: with the numbers on the backing there are
+  // two pages to each one of these.
   return { bytes: await doc.save(), sheetCount, stickerCount: filledSlots(ctx.album).length };
 }
 

@@ -892,6 +892,21 @@ label.label {
   background: rgba(255, 255, 255, 0.7);
 }
 
+/*
+ * The window a photo is drawn in, in all three places one appears. It is the
+ * slot itself at no turn, and the slot lying on its side at a quarter turn;
+ * rotating it about its own middle lands it back on the slot, which is why
+ * `transform-origin` is left alone. Whatever holds it does the clipping.
+ */
+.framed {
+  position: absolute;
+  display: block;
+}
+.framed img {
+  position: absolute;
+  max-width: none;
+}
+
 .slot__photo {
   position: absolute;
   max-width: none;
@@ -1192,7 +1207,7 @@ label.label {
   display: grid;
   place-items: center;
   gap: 8px;
-  aspect-ratio: 50 / 70;
+  aspect-ratio: var(--sticker-aspect, 50 / 70);
   width: min(220px, 62vw);
   margin: 0 auto;
   border: 3px dashed var(--line);
@@ -1347,10 +1362,14 @@ label.label {
   opacity: 1;
   border-color: var(--accent);
 }
-/* A sticker is 50 x 70, so a result is shown in the shape it will end up. */
+/*
+ * A result is shown in the shape it will end up: this album's own sticker,
+ * which the editor sets on the page it holds. Cropping it to something else
+ * here would sell the child a picture the sticker cannot keep.
+ */
 .picsearch__hit img {
   width: 100%;
-  aspect-ratio: 50 / 70;
+  aspect-ratio: var(--sticker-aspect, 50 / 70);
   object-fit: cover;
   display: block;
   background: var(--line);
@@ -1397,7 +1416,7 @@ label.label {
 .framer {
   position: relative;
   width: min(220px, 62vw);
-  aspect-ratio: 50 / 70;
+  aspect-ratio: var(--sticker-aspect, 50 / 70);
   margin: 0 auto;
   border-radius: 12px;
   overflow: hidden;
@@ -1409,9 +1428,30 @@ label.label {
   cursor: grabbing;
 }
 .framer img {
-  position: absolute;
-  max-width: none;
   pointer-events: none;
+}
+
+/* The turn button, directly under the picture it turns. */
+.framer__tools {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+/*
+ * Carries the shape of the sticker being edited to everything sticker-shaped
+ * in the sheet. It is a box with no box: `contents` keeps it out of the layout
+ * while custom properties still inherit through it.
+ */
+.slotbody {
+  display: contents;
+}
+
+/* Laying the sticker down, or standing it up: a change to the page, not the photo. */
+.slotshape {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
 }
 
 .slider {
@@ -1474,6 +1514,66 @@ label.label {
 .print-section {
   margin-top: 22px;
   font-size: 19px;
+}
+
+/*
+ * Where the sticker number is printed: on the picture, or on the backing paper
+ * behind it. Two cards rather than a checkbox, because the difference is a
+ * picture — and the glyph on each is that picture, at the size of a thumbnail.
+ */
+.numgrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 10px 0 4px;
+}
+.numcard {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--paper);
+  border: 3px solid var(--line);
+  text-align: center;
+  transition: border-color 0.14s ease;
+}
+.numcard[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.numcard__hint {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+.numglyph {
+  width: 100%;
+  height: 62px;
+}
+.numglyph__face {
+  fill: #f2f5fa;
+  stroke: #c9cdd2;
+  stroke-width: 1.2;
+}
+.numglyph__back {
+  fill: #ffffff;
+  stroke: #b9bec4;
+  stroke-width: 1.2;
+}
+.numglyph__n {
+  font-size: 15px;
+  font-weight: 800;
+  text-anchor: middle;
+}
+.numglyph__n--badge {
+  font-size: 9px;
+  fill: #ffffff;
+}
+
+/* One card per row once two of them stop fitting side by side. */
+@media (max-width: 560px) {
+  .numgrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .print-actions {
@@ -2105,6 +2205,49 @@ label.label {
 .sizecard__hint {
   font-size: 13px;
   color: var(--muted);
+}
+
+/*
+ * Standing or lying, drawn as the sticker itself at true relative scale: the
+ * two rectangles are the same piece of paper turned, and seeing that is the
+ * whole choice.
+ */
+.turngrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.turncard {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border-radius: 16px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  border: 3px solid transparent;
+  text-align: center;
+  transition: transform 0.14s ease, border-color 0.14s ease;
+}
+@media (hover: hover) {
+  .turncard:hover {
+    transform: translateY(-3px);
+  }
+}
+.turncard[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.turncard__paper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 76px;
+}
+.turncard__sticker {
+  display: block;
+  border-radius: 5px;
+  border: 2px solid var(--line);
+  background: linear-gradient(160deg, #ffffff, #eaeff7);
 }
 
 .pergrid {

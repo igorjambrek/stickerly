@@ -20,19 +20,25 @@ import type {
   Page,
   PageKind,
   Slot,
+  StickerOrientation,
 } from '@album/shared';
 import {
   DEFAULT_ALBUM_SIZE,
   DEFAULT_CROP,
   DEFAULT_LANG,
+  DEFAULT_ORIENTATION,
   LANGS,
   carryCover,
   getTemplate,
   getVariant,
   isAlbumSize,
+  isStickerOrientation,
   isTemplateId,
   layoutFor,
+  otherOrientation,
+  quarterTurn,
   renumber,
+  slotSpanOf,
 } from '@album/shared';
 import type { Db } from './db/index.ts';
 import { config } from './config.ts';
@@ -60,12 +66,17 @@ const normaliseCrop = (c: unknown): Crop => {
     x: clamp01(raw.x, DEFAULT_CROP.x),
     y: clamp01(raw.y, DEFAULT_CROP.y),
     scale: Math.min(4, Math.max(1, scale)),
+    // Anything but a quarter turn would leave white wedges in the sticker.
+    rotate: quarterTurn(raw.rotate),
   };
 };
 
 const normaliseLang = (v: unknown): Lang => (LANGS.includes(v as Lang) ? (v as Lang) : DEFAULT_LANG);
 
 const normaliseSize = (v: unknown): AlbumSize => (isAlbumSize(v) ? v : DEFAULT_ALBUM_SIZE);
+
+const normaliseOrientation = (v: unknown): StickerOrientation =>
+  isStickerOrientation(v) ? v : DEFAULT_ORIENTATION;
 
 /** A cover id this theme does not have resolves to the theme's own cover. */
 const normaliseVariant = (templateId: string, v: unknown): string =>
@@ -84,6 +95,7 @@ export interface CreateAlbumInput {
   coverVariantId?: unknown;
   coverImageId?: unknown;
   size?: unknown;
+  stickerOrientation?: unknown;
   slotsPerPage?: unknown;
   lang?: unknown;
   ownerName?: string;
@@ -124,10 +136,10 @@ export function createRepo(db: Db) {
     imagesOf: db.prepare('SELECT id, w, h FROM images WHERE album_id = ? ORDER BY created_at'),
     touch: db.prepare('UPDATE albums SET updated_at = ? WHERE id = ?'),
     insertAlbum: db.prepare(
-      `INSERT INTO albums (id, title, template_id, cover_variant, size, slots_per_page, lang, owner_name,
-                           owner_person_id, edit_token, created_at, updated_at)
-       VALUES (@id, @title, @templateId, @coverVariant, @size, @slotsPerPage, @lang, @ownerName,
-               @ownerPersonId, @editToken, @now, @now)`,
+      `INSERT INTO albums (id, title, template_id, cover_variant, size, sticker_orientation, slots_per_page,
+                           lang, owner_name, owner_person_id, edit_token, created_at, updated_at)
+       VALUES (@id, @title, @templateId, @coverVariant, @size, @stickerOrientation, @slotsPerPage,
+               @lang, @ownerName, @ownerPersonId, @editToken, @now, @now)`,
     ),
 
     /**
@@ -152,7 +164,13 @@ export function createRepo(db: Db) {
     ),
     setOwner: db.prepare('UPDATE albums SET owner_person_id = ? WHERE id = ? AND owner_person_id IS NULL'),
     insertPage: db.prepare('INSERT INTO pages (id, album_id, position, kind, title) VALUES (?, ?, ?, ?, ?)'),
-    insertSlot: db.prepare('INSERT INTO slots (id, page_id, position) VALUES (?, ?, ?)'),
+    insertSlot: db.prepare('INSERT INTO slots (id, page_id, position, orientation) VALUES (?, ?, ?, ?)'),
+    slotsOfPage: db.prepare('SELECT * FROM slots WHERE page_id = ? ORDER BY position, id'),
+    pageOfSlot: db.prepare(
+      'SELECT p.* FROM pages p JOIN slots s ON s.page_id = p.id WHERE s.id = ? AND p.album_id = ?',
+    ),
+    deleteSlot: db.prepare('DELETE FROM slots WHERE id = ?'),
+    setSlotShape: db.prepare('UPDATE slots SET position = ?, orientation = ? WHERE id = ?'),
     deletePage: db.prepare('DELETE FROM pages WHERE id = ? AND album_id = ?'),
     setPagePosition: db.prepare('UPDATE pages SET position = ? WHERE id = ?'),
     setPageTitle: db.prepare('UPDATE pages SET title = ? WHERE id = ? AND album_id = ?'),
@@ -162,7 +180,7 @@ export function createRepo(db: Db) {
     ),
     updateSlot: db.prepare(
       `UPDATE slots SET label = @label, image_id = @imageId, crop_x = @cropX, crop_y = @cropY,
-              crop_scale = @cropScale, filled_by = @filledBy
+              crop_scale = @cropScale, crop_rotate = @cropRotate, filled_by = @filledBy
        WHERE id = @id`,
     ),
     insertImage: db.prepare('INSERT INTO images (id, album_id, w, h, created_at) VALUES (?, ?, ?, ?, ?)'),
@@ -174,7 +192,8 @@ export function createRepo(db: Db) {
     ),
     updateCover: db.prepare(
       `UPDATE albums SET template_id = @templateId, cover_variant = @variant, cover_image_id = @imageId,
-              cover_crop_x = @cropX, cover_crop_y = @cropY, cover_crop_scale = @cropScale, updated_at = @now
+              cover_crop_x = @cropX, cover_crop_y = @cropY, cover_crop_scale = @cropScale,
+              cover_crop_rotate = @cropRotate, updated_at = @now
        WHERE id = @id`,
     ),
     deleteAlbum: db.prepare('DELETE FROM albums WHERE id = ?'),
@@ -189,7 +208,9 @@ export function createRepo(db: Db) {
     cover_crop_x: number;
     cover_crop_y: number;
     cover_crop_scale: number;
+    cover_crop_rotate: number;
     size: string;
+    sticker_orientation: string;
     slots_per_page: number;
     lang: string;
     owner_name: string;
@@ -204,22 +225,28 @@ export function createRepo(db: Db) {
     id: string;
     page_id: string;
     position: number;
+    orientation: string;
     label: string;
     image_id: string | null;
     crop_x: number;
     crop_y: number;
     crop_scale: number;
+    crop_rotate: number;
     filled_by: string | null;
   };
 
   const touch = (albumId: string) => q.touch.run(new Date().toISOString(), albumId);
 
-  /** Add a page and its slots. The album's grid decides how many. */
+  /**
+   * Add a page and its slots. The album's grid decides how many, and they all
+   * start standing the way the album does; turning one is the child's to do
+   * later, sticker by sticker.
+   */
   const insertPageWithSlots = db.transaction(
     (albumId: string, position: number, slotCount: number, kind: PageKind = 'sticker') => {
       const pageId = newId();
       q.insertPage.run(pageId, albumId, position, kind, '');
-      for (let i = 0; i < slotCount; i++) q.insertSlot.run(newId(), pageId, i);
+      for (let i = 0; i < slotCount; i++) q.insertSlot.run(newId(), pageId, i, '');
       return pageId;
     },
   );
@@ -236,8 +263,11 @@ export function createRepo(db: Db) {
       const editToken = newToken();
       const template = getTemplate(input.templateId ?? '');
       const size = normaliseSize(input.size);
+      const stickerOrientation = normaliseOrientation(input.stickerOrientation);
       // Snap to a grid this paper can actually print, rather than rejecting.
-      const slotsPerPage = layoutFor(size, input.slotsPerPage).slotsPerPage;
+      // Turning the sticker changes which grids those are, so it is asked
+      // first and the count is snapped against it.
+      const slotsPerPage = layoutFor(size, input.slotsPerPage, stickerOrientation).slotsPerPage;
       const now = new Date().toISOString();
 
       const ownerPersonId = input.ownerPersonId ?? null;
@@ -249,6 +279,7 @@ export function createRepo(db: Db) {
           templateId: template.id,
           coverVariant: normaliseVariant(template.id, input.coverVariantId),
           size,
+          stickerOrientation,
           slotsPerPage,
           lang: normaliseLang(input.lang),
           ownerName: clampText(input.ownerName, MAX_NAME),
@@ -267,6 +298,8 @@ export function createRepo(db: Db) {
     /** The full album, with numbering derived from position. */
     get(token: string): Album {
       const row = requireAlbumRow(token);
+      const size = normaliseSize(row.size);
+      const stickerOrientation = normaliseOrientation(row.sticker_orientation);
       const pageRows = q.pagesOf.all(row.id) as PageRow[];
       const slotRows = q.slotsOf.all(row.id) as SlotRow[];
 
@@ -277,10 +310,12 @@ export function createRepo(db: Db) {
           id: s.id,
           pageId: s.page_id,
           position: s.position,
+          // An empty column means the slot never had an opinion of its own.
+          orientation: isStickerOrientation(s.orientation) ? s.orientation : stickerOrientation,
           number: 0, // filled in by renumber below
           label: s.label,
           imageId: s.image_id,
-          crop: { x: s.crop_x, y: s.crop_y, scale: s.crop_scale },
+          crop: { x: s.crop_x, y: s.crop_y, scale: s.crop_scale, rotate: s.crop_rotate },
           filledBy: s.filled_by,
         });
         slotsByPage.set(s.page_id, list);
@@ -294,16 +329,21 @@ export function createRepo(db: Db) {
         slots: slotsByPage.get(p.id) ?? [],
       }));
 
-      const size = normaliseSize(row.size);
       return {
         id: row.id,
         title: row.title,
         templateId: row.template_id,
         coverVariantId: normaliseVariant(row.template_id, row.cover_variant),
         coverImageId: row.cover_image_id,
-        coverCrop: { x: row.cover_crop_x, y: row.cover_crop_y, scale: row.cover_crop_scale },
+        coverCrop: {
+          x: row.cover_crop_x,
+          y: row.cover_crop_y,
+          scale: row.cover_crop_scale,
+          rotate: row.cover_crop_rotate,
+        },
         size,
-        slotsPerPage: layoutFor(size, row.slots_per_page).slotsPerPage,
+        stickerOrientation,
+        slotsPerPage: layoutFor(size, row.slots_per_page, stickerOrientation).slotsPerPage,
         lang: normaliseLang(row.lang),
         ownerName: row.owner_name,
         createdAt: row.created_at,
@@ -335,9 +375,10 @@ export function createRepo(db: Db) {
     },
 
     /**
-     * Size and slots-per-page are deliberately absent: both decide how many
-     * slots a page has, and changing that in an album with photos in it means
-     * throwing some away. They are chosen once, at creation.
+     * Size, orientation and slots-per-page are deliberately absent: all three
+     * decide how many slots a page has and what shape they are, and changing
+     * that in an album with photos in it means throwing some away. They are
+     * chosen once, at creation.
      */
     update(token: string, patch: { title?: string; lang?: unknown; ownerName?: string }): void {
       const row = requireAlbumRow(token);
@@ -378,7 +419,12 @@ export function createRepo(db: Db) {
 
       const crop =
         patch.coverCrop === undefined
-          ? { x: row.cover_crop_x, y: row.cover_crop_y, scale: row.cover_crop_scale }
+          ? {
+              x: row.cover_crop_x,
+              y: row.cover_crop_y,
+              scale: row.cover_crop_scale,
+              rotate: row.cover_crop_rotate,
+            }
           : normaliseCrop(patch.coverCrop);
 
       const templateId =
@@ -401,6 +447,7 @@ export function createRepo(db: Db) {
         cropX: crop.x,
         cropY: crop.y,
         cropScale: crop.scale,
+        cropRotate: crop.rotate,
         now: new Date().toISOString(),
       });
     },
@@ -409,7 +456,11 @@ export function createRepo(db: Db) {
       const row = requireAlbumRow(token);
       const { n } = q.countPages.get(row.id) as { n: number };
       if (n >= config.maxPagesPerAlbum) throw new Invalid('too many pages');
-      insertPageWithSlots(row.id, n, layoutFor(row.size, row.slots_per_page).slotsPerPage);
+      insertPageWithSlots(
+        row.id,
+        n,
+        layoutFor(row.size, row.slots_per_page, row.sticker_orientation).slotsPerPage,
+      );
       touch(row.id);
     },
 
@@ -464,7 +515,10 @@ export function createRepo(db: Db) {
       let imageId = patch.imageId === undefined ? slot.image_id : patch.imageId;
       if (imageId && !q.imageInAlbum.get(imageId, row.id)) throw new Invalid('unknown image');
 
-      const crop = patch.crop === undefined ? { x: slot.crop_x, y: slot.crop_y, scale: slot.crop_scale } : normaliseCrop(patch.crop);
+      const crop =
+        patch.crop === undefined
+          ? { x: slot.crop_x, y: slot.crop_y, scale: slot.crop_scale, rotate: slot.crop_rotate }
+          : normaliseCrop(patch.crop);
 
       // Attribution follows the photo, not the edit: nudging someone else's
       // crop or fixing their spelling does not make the sticker yours.
@@ -477,8 +531,72 @@ export function createRepo(db: Db) {
         cropX: crop.x,
         cropY: crop.y,
         cropScale: crop.scale,
+        cropRotate: crop.rotate,
         filledBy,
       });
+      touch(row.id);
+    },
+
+    /**
+     * Turn one sticker the other way up.
+     *
+     * This is the only edit that changes what is on a page rather than what is
+     * in it, and it is the one a football album eventually needs: somewhere
+     * there has to be a wide sticker for the whole team. A turned sticker is
+     * the same 50 x 70 rectangle lying down, and the only place a 70 mm-wide
+     * thing fits on a grid of 50 mm cells is across two of them — so turning
+     * one swallows the cell beside it, and turning it back gives that cell
+     * away again as a fresh empty sticker.
+     *
+     * The swallowed sticker is deleted, photo and all. The editor asks first
+     * when there is a photo to lose; by the time a request arrives here the
+     * child has already said yes, and undo is the ordinary one.
+     */
+    turnSlot(token: string, slotId: string): void {
+      const row = requireAlbumRow(token);
+      const slot = q.slotInAlbum.get(slotId, row.id) as SlotRow | undefined;
+      if (!slot) throw new NotFound('slot not found');
+
+      const albumWay = normaliseOrientation(row.sticker_orientation);
+      const layout = layoutFor(row.size, row.slots_per_page, albumWay);
+      const now = isStickerOrientation(slot.orientation) ? slot.orientation : albumWay;
+      const next = otherOrientation(now);
+
+      // Where it sits now, and where it would sit turned.
+      const held = slotSpanOf(layout, slot.position, now);
+      const span = slotSpanOf(layout, slot.position, next);
+      if (!span) throw new Invalid('no room to turn this sticker here');
+
+      // Which cells each of the others is standing on. A neighbour may itself
+      // be lying down across two, and asking only about its position would let
+      // this sticker come to rest half on top of it.
+      const siblings = (q.slotsOfPage.all(slot.page_id) as SlotRow[])
+        .filter((s) => s.id !== slot.id)
+        .map((s) => ({
+          row: s,
+          cells:
+            slotSpanOf(layout, s.position, isStickerOrientation(s.orientation) ? s.orientation : albumWay)
+              ?.cells ?? [s.position],
+        }));
+      const taken = new Set(siblings.flatMap((s) => s.cells));
+
+      db.transaction(() => {
+        if (next === albumWay) {
+          // Standing back up: it needs one cell, and every other cell it had
+          // comes back as an empty sticker for the child to fill.
+          q.setSlotShape.run(span.start, '', slot.id);
+          for (const cell of held?.cells ?? []) {
+            if (cell === span.start || taken.has(cell)) continue;
+            q.insertSlot.run(newId(), slot.page_id, cell, '');
+          }
+        } else {
+          // Lying down: whatever was standing on the cells it now covers is gone.
+          for (const other of siblings) {
+            if (other.cells.some((c) => span.cells.includes(c))) q.deleteSlot.run(other.row.id);
+          }
+          q.setSlotShape.run(span.start, next, slot.id);
+        }
+      })();
       touch(row.id);
     },
 
@@ -493,8 +611,8 @@ export function createRepo(db: Db) {
       if (!a || !b) throw new NotFound('slot not found');
 
       db.transaction(() => {
-        q.updateSlot.run({ id: a.id, label: b.label, imageId: b.image_id, cropX: b.crop_x, cropY: b.crop_y, cropScale: b.crop_scale, filledBy: b.filled_by });
-        q.updateSlot.run({ id: b.id, label: a.label, imageId: a.image_id, cropX: a.crop_x, cropY: a.crop_y, cropScale: a.crop_scale, filledBy: a.filled_by });
+        q.updateSlot.run({ id: a.id, label: b.label, imageId: b.image_id, cropX: b.crop_x, cropY: b.crop_y, cropScale: b.crop_scale, cropRotate: b.crop_rotate, filledBy: b.filled_by });
+        q.updateSlot.run({ id: b.id, label: a.label, imageId: a.image_id, cropX: a.crop_x, cropY: a.crop_y, cropScale: a.crop_scale, cropRotate: a.crop_rotate, filledBy: a.filled_by });
       })();
       touch(row.id);
     },

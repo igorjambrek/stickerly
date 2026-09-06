@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { PDFDocument } from 'pdf-lib';
-import type { AlbumSize, PrintPart } from '@album/shared';
+import { inflateSync } from 'node:zlib';
+import { PDFArray, PDFDocument, PDFRawStream } from 'pdf-lib';
+import type { Album, AlbumSize, PrintPart } from '@album/shared';
 import {
   ALBUM_SIZES,
-  GRID_CHOICES,
+  STICKER_ORIENTATIONS,
   STICKER_SHEET,
   TEMPLATES,
+  gridChoices,
   layoutFor,
   mmToPt,
   printFileName,
@@ -17,6 +19,17 @@ import { buildCoverPdf, buildPagesPdf, buildStickersPdf } from '../src/pdf/index
 import { fixtureImageLoader, makeFixtureAlbum } from '../src/testing/fixtures.ts';
 
 const loadImage = fixtureImageLoader();
+
+/** The same album with some stickers lying down, as a child would leave it. */
+const turnEveryThirdSticker = (album: Album): Album => ({
+  ...album,
+  pages: album.pages.map((page) => ({
+    ...page,
+    slots: page.slots.map((slot) =>
+      slot.number % 3 === 0 ? { ...slot, orientation: 'landscape' as const } : slot,
+    ),
+  })),
+});
 const TOLERANCE = 0.01; // points
 
 const subjectOf = async (bytes: Uint8Array) => (await PDFDocument.load(bytes)).getSubject() ?? '';
@@ -25,6 +38,28 @@ async function sizesOf(bytes: Uint8Array) {
   const doc = await PDFDocument.load(bytes);
   return doc.getPages().map((p) => ({ w: p.getWidth(), h: p.getHeight() }));
 }
+
+/**
+ * The drawing operators of each page, in order. pdf-lib deflates them on save,
+ * so a saved PDF is the only place the finished page can be read back.
+ */
+async function pageOperators(bytes: Uint8Array): Promise<string[]> {
+  const doc = await PDFDocument.load(bytes);
+  return doc.getPages().map((page) => {
+    const contents = page.node.Contents();
+    const contentList = contents instanceof PDFArray ? contents.asArray().map((ref) => doc.context.lookup(ref)) : [contents];
+    return contentList
+      .filter((s): s is PDFRawStream => s instanceof PDFRawStream)
+      .map((s) => inflateSync(Buffer.from(s.getContents())).toString('latin1'))
+      .join('\n');
+  });
+}
+
+/** How many photos a page draws. Every image is an XObject invoked by name. */
+const photosOn = (ops: string) => (ops.match(/\/Image-\d+ Do/g) ?? []).length;
+
+/** How many separate pieces of text a page draws: pdf-lib opens each with BT. */
+const textsOn = (ops: string) => (ops.match(/^BT$/gm) ?? []).length;
 
 const assertSize = (got: { w: number; h: number }, wMm: number, hMm: number, what: string) => {
   assert.ok(Math.abs(got.w - mmToPt(wMm)) < TOLERANCE, `${what} width: ${got.w} vs ${mmToPt(wMm)}`);
@@ -92,13 +127,21 @@ describe('pages pdf', () => {
   });
 
   it('prints every side on the paper the album was made for', async () => {
-    for (const size of ALBUM_SIZES) {
-      for (const choice of GRID_CHOICES[size]) {
-        const album = makeFixtureAlbum({ size, slotsPerPage: choice.perPage, pages: 4, filled: 4 });
-        const sheet = layoutFor(size, choice.perPage).sheet;
-        const result = await buildPagesPdf({ album, loadImage });
-        for (const s of await sizesOf(result.bytes)) {
-          assertSize(s, sheet.w, sheet.h, `${size} / ${choice.perPage} page sheet`);
+    for (const orientation of STICKER_ORIENTATIONS) {
+      for (const size of ALBUM_SIZES) {
+        for (const choice of gridChoices(size, orientation)) {
+          const album = makeFixtureAlbum({
+            size,
+            stickerOrientation: orientation,
+            slotsPerPage: choice.perPage,
+            pages: 4,
+            filled: 4,
+          });
+          const sheet = layoutFor(size, choice.perPage, orientation).sheet;
+          const result = await buildPagesPdf({ album, loadImage });
+          for (const s of await sizesOf(result.bytes)) {
+            assertSize(s, sheet.w, sheet.h, `${size} ${orientation} / ${choice.perPage} page sheet`);
+          }
         }
       }
     }
@@ -121,13 +164,60 @@ describe('stickers pdf', () => {
     assert.equal(result.sheetCount, Math.ceil(30 / stickersPerSheet('full')));
   });
 
-  it('is A4 portrait for every album size, so it fits ordinary sticker paper', async () => {
-    for (const size of ALBUM_SIZES) {
-      const album = makeFixtureAlbum({ size, pages: 2, filled: 3 });
-      const result = await buildStickersPdf({ album, loadImage });
-      for (const s of await sizesOf(result.bytes)) {
-        assertSize(s, STICKER_SHEET.w, STICKER_SHEET.h, `${size} sticker sheet`);
+  it('prints every sheet twice: the stickers, then their numbers', async () => {
+    // The number belongs on the backing paper, so it is cut out with the
+    // sticker, matched to its slot, and then peeled away with the liner.
+    const album = makeFixtureAlbum({ pages: 5, filled: 30 });
+    const result = await buildStickersPdf({ album, loadImage });
+    const pages = await pageOperators(result.bytes);
+    assert.equal(pages.length, result.sheetCount * 2, 'a front and a back for each sheet');
+
+    const [front, back] = [pages[0]!, pages[1]!];
+    assert.equal(photosOn(front), stickersPerSheet('full'), 'the front carries the pictures');
+    assert.equal(photosOn(back), 0, 'and the back carries nothing but the numbers');
+  });
+
+  it('puts the number back on the picture when the job asks it to', async () => {
+    // Not every printer will take sticker paper through twice, so the number
+    // can go back in the corner of the sticker, the way Panini prints it.
+    const album = makeFixtureAlbum({ pages: 5, filled: 30 });
+    const onPicture = await buildStickersPdf({ album, loadImage, numbers: 'sticker' });
+    const onBacking = await buildStickersPdf({ album, loadImage, numbers: 'backing' });
+
+    const face = await pageOperators(onPicture.bytes);
+    const back = await pageOperators(onBacking.bytes);
+    assert.equal(onPicture.sheetCount, onBacking.sheetCount, 'the same paper either way');
+    assert.equal(face.length, onPicture.sheetCount, 'one side per sheet, and no page of numbers');
+    assert.equal(back.length, onBacking.sheetCount * 2);
+
+    const perSheet = stickersPerSheet('full');
+    assert.equal(photosOn(face[0]!), perSheet, 'the stickers themselves are unchanged');
+    assert.equal(textsOn(face[0]!) - textsOn(back[0]!), perSheet, 'every sticker gained its number');
+  });
+
+  it('is A4 portrait for every album, so it fits ordinary sticker paper', async () => {
+    for (const orientation of STICKER_ORIENTATIONS) {
+      for (const size of ALBUM_SIZES) {
+        const album = makeFixtureAlbum({ size, stickerOrientation: orientation, pages: 2, filled: 3 });
+        const result = await buildStickersPdf({ album, loadImage });
+        for (const s of await sizesOf(result.bytes)) {
+          assertSize(s, STICKER_SHEET.w, STICKER_SHEET.h, `${size} ${orientation} sticker sheet`);
+        }
       }
+    }
+  });
+
+  it('costs one cell per sticker however that sticker stands', async () => {
+    // A lying sticker is printed lying inside an upright cell and turned once
+    // it is cut out, so a mixed album needs no extra paper for the mixture.
+    const album = makeFixtureAlbum({ pages: 5, filled: 30 });
+    const mixed = turnEveryThirdSticker(album);
+    const plain = await buildStickersPdf({ album, loadImage });
+    const both = await buildStickersPdf({ album: mixed, loadImage });
+    assert.equal(both.stickerCount, plain.stickerCount);
+    assert.equal(both.sheetCount, plain.sheetCount);
+    for (const s of await sizesOf(both.bytes)) {
+      assertSize(s, STICKER_SHEET.w, STICKER_SHEET.h, 'a mixed album still prints upright A4');
     }
   });
 
@@ -216,6 +306,16 @@ describe('what a print shop is handed', () => {
     assert.match(subjects.pages!, /120–160/, 'the pages ask for something heavier than office paper');
     assert.doesNotMatch(subjects.stickers!, /\d+–\d+/, 'sticker paper comes in one weight');
     assert.notEqual(subjects.cover, subjects.pages, 'the same sheet, printed differently');
+  });
+
+  it('counts the sides of the job it was actually built for', async () => {
+    // The choice of where the numbers go is not stored anywhere, so the file
+    // itself is the only place a shop can read it back.
+    const album = makeFixtureAlbum({ lang: 'en', size: 'a3', pages: 4, filled: 3 });
+    const onBacking = await subjectOf((await buildStickersPdf({ album, loadImage })).bytes);
+    const onPicture = await subjectOf((await buildStickersPdf({ album, loadImage, numbers: 'sticker' })).bytes);
+    assert.match(onBacking, /double-sided/);
+    assert.match(onPicture, /single-sided/);
   });
 
   it('says A4 for the sticker sheets even in a big album', async () => {

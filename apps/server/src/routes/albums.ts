@@ -30,6 +30,7 @@ export function albumRoutes(repo: Repo, live: Realtime) {
         templateId: body.templateId as string,
         coverVariantId: body.coverVariantId,
         size: body.size,
+        stickerOrientation: body.stickerOrientation,
         slotsPerPage: body.slotsPerPage,
         ownerName: body.ownerName as string,
         lang: body.lang,
@@ -60,7 +61,8 @@ export function albumRoutes(repo: Repo, live: Realtime) {
      * The cover has its own endpoint because it is the one part of an album a
      * child is expected to change their mind about, repeatedly — the theme
      * included, since a theme is only paint and the stickers stay where they
-     * are. Size and stickers-per-page, which would destroy slots, stay locked.
+     * are. Size, orientation and stickers-per-page, which would destroy slots,
+     * stay locked.
      */
     app.put<{ Params: TokenParams }>('/api/albums/:token/cover', async (req) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -104,6 +106,17 @@ export function albumRoutes(repo: Repo, live: Realtime) {
         // still welcome; their stickers simply carry no face.
         req.person?.id ?? null,
       );
+      return live.publish(req, req.params.token);
+    });
+
+    /**
+     * Turning one sticker the other way up. Its own route rather than a field
+     * on the slot above, because it is the one slot edit that rearranges the
+     * page instead of filling it: a turned sticker takes the room of two, and
+     * the sticker it displaces is gone.
+     */
+    app.post<{ Params: TokenParams & { slotId: string } }>('/api/albums/:token/slots/:slotId/turn', async (req) => {
+      repo.turnSlot(req.params.token, req.params.slotId);
       return live.publish(req, req.params.token);
     });
 

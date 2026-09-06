@@ -6,8 +6,11 @@ import { translator } from '../src/i18n.ts';
 import {
   PRINT_PAPER,
   PRINT_PARTS,
+  type PrintOptions,
+  type PrintPart,
   STICKER_PAPER,
   describePart,
+  duplexFor,
   paperText,
   printFileName,
   printShopNote,
@@ -30,6 +33,7 @@ const page = (id: string, position: number, slotCount: number, filled = 0): Page
       label: '',
       imageId: i < filled ? `img-${id}-${i}` : null,
       filledBy: null,
+      orientation: 'portrait' as const,
       crop: { ...DEFAULT_CROP },
     }),
   ),
@@ -50,10 +54,39 @@ describe('print paper', () => {
     assert.equal(PRINT_PAPER.stickers.gsm, null, 'sticker paper is named by what it does');
   });
 
-  it('prints the cover and the pages on both sides, the stickers on one', () => {
-    assert.equal(PRINT_PAPER.cover.duplex, true);
-    assert.equal(PRINT_PAPER.pages.duplex, true);
-    assert.equal(PRINT_PAPER.stickers.duplex, false);
+  it('prints all three on both sides, the stickers because of their numbers', () => {
+    // A sticker's number is printed on the backing paper rather than over the
+    // picture, so even the sticker sheets go through the printer twice.
+    for (const part of PRINT_PARTS) assert.equal(duplexFor(part), true, part);
+  });
+
+  it('gives the sticker sheet its second side back when the number goes on the picture', () => {
+    const onPicture = { numbers: 'sticker' } as const;
+    assert.equal(duplexFor('stickers', onPicture), false);
+    // The fold decides the other two, so no choice about numbers can touch them.
+    assert.equal(duplexFor('cover', onPicture), true);
+    assert.equal(duplexFor('pages', onPicture), true);
+  });
+
+  it('says single-sided in the sentence the print shop reads, when it is', () => {
+    const spec = (opts: PrintOptions) =>
+      describePart(t, 'stickers', { sheet: 'A4', sheets: 2, file: 'x.pdf' }, opts).specLine;
+    assert.match(spec({ numbers: 'backing' }), /portrait, double-sided/);
+    assert.match(spec({ numbers: 'sticker' }), /portrait, single-sided/);
+  });
+
+  it('feeds the folded sheets landscape and the sticker paper upright', () => {
+    assert.equal(PRINT_PAPER.cover.landscape, true);
+    assert.equal(PRINT_PAPER.pages.landscape, true);
+    assert.equal(PRINT_PAPER.stickers.landscape, false, 'sticker sheets are A4 portrait');
+  });
+
+  it('says which way up each file goes, in the sentence the print shop reads', () => {
+    const spec = (part: PrintPart) =>
+      describePart(t, part, { sheet: sheetPaperFor(part, 'a3'), sheets: 2, file: 'x.pdf' }).specLine;
+    assert.match(spec('cover'), /landscape, double-sided/);
+    assert.match(spec('pages'), /landscape, double-sided/);
+    assert.match(spec('stickers'), /portrait, double-sided/, 'A4 sticker paper, numbers on the back');
   });
 
   it('keeps sticker sheets at A4 however big the album is', () => {
@@ -148,7 +181,7 @@ describe('the note for the print shop', () => {
       );
       const note = printShopNote(say, localised);
       assert.doesNotMatch(note, /[{}]/, `${lang}: an unfilled placeholder`);
-      assert.doesNotMatch(note, /print\.(spec|shop|paper|sheets)/, `${lang}: a missing translation shows the key`);
+      assert.doesNotMatch(note, /print\.(spec|shop|paper|sheets|orient)/, `${lang}: a missing translation shows the key`);
       for (const part of localised) {
         assert.ok(part.paper.length > 3, `${lang}: ${part.part} names its paper`);
         assert.ok(part.sheetsLine.includes('2'), `${lang}: ${part.part} counts its sheets`);

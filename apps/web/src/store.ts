@@ -60,6 +60,7 @@ interface State {
   deletePage: (pageId: string) => Promise<void>;
   setPageTitle: (pageId: string, title: string) => Promise<void>;
   setSlot: (slot: Slot, patch: { label?: string; imageId?: string | null; crop?: Crop }) => Promise<void>;
+  turnSlot: (slotId: string) => Promise<void>;
   swapSlots: (slotId: string, withId: string) => Promise<void>;
 }
 
@@ -197,6 +198,16 @@ export const useStore = create<State>((set, get) => ({
       label: 'slot',
       run: () => api.setSlot(token, slot.id, before),
     });
+  },
+
+  /**
+   * Turning a sticker is not undoable the way the rest is: it swallows the
+   * sticker beside it, and turning it back hands out an empty one rather than
+   * the photo that was there. The editor asks before it costs anything.
+   */
+  turnSlot(slotId) {
+    const token = get().token!;
+    return get().run(() => api.turnSlot(token, slotId));
   },
 
   swapSlots(slotId, withId) {

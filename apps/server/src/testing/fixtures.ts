@@ -6,8 +6,15 @@
  */
 
 import sharp from 'sharp';
-import type { Album, AlbumSize, Lang, Page, Slot } from '@album/shared';
-import { DEFAULT_CROP, DEFAULT_ALBUM_SIZE, getTemplate, layoutFor, renumber } from '@album/shared';
+import type { Album, AlbumSize, Lang, Page, Slot, StickerOrientation } from '@album/shared';
+import {
+  DEFAULT_ALBUM_SIZE,
+  DEFAULT_CROP,
+  DEFAULT_ORIENTATION,
+  getTemplate,
+  layoutFor,
+  renumber,
+} from '@album/shared';
 
 const NAMES = [
   'Марко',
@@ -39,6 +46,7 @@ export interface FixtureOptions {
   /** Set to give the fixture a photo cover; the loader fabricates the picture. */
   coverImageId?: string | null;
   size?: AlbumSize;
+  stickerOrientation?: StickerOrientation;
   slotsPerPage?: number;
   lang?: Lang;
   title?: string;
@@ -50,7 +58,8 @@ export function makeFixtureAlbum(o: FixtureOptions = {}): Album {
   const filled = o.filled ?? 30;
   const templateId = o.templateId ?? 'football';
   const size = o.size ?? DEFAULT_ALBUM_SIZE;
-  const layout = layoutFor(size, o.slotsPerPage);
+  const stickerOrientation = o.stickerOrientation ?? DEFAULT_ORIENTATION;
+  const layout = layoutFor(size, o.slotsPerPage, stickerOrientation);
 
   let n = 0;
   const pages: Page[] = Array.from({ length: pageCount }, (_, p) => ({
@@ -64,6 +73,7 @@ export function makeFixtureAlbum(o: FixtureOptions = {}): Album {
         id: `slot-${index}`,
         pageId: `page-${p}`,
         position: s,
+        orientation: stickerOrientation,
         number: index + 1,
         label: index < filled ? NAMES[index % NAMES.length]! : '',
         imageId: index < filled ? `img-${index}` : null,
@@ -82,6 +92,7 @@ export function makeFixtureAlbum(o: FixtureOptions = {}): Album {
     coverImageId,
     coverCrop: { ...DEFAULT_CROP },
     size,
+    stickerOrientation,
     slotsPerPage: layout.slotsPerPage,
     lang: o.lang ?? 'sr-Cyrl',
     ownerName: o.ownerName ?? 'Милица',

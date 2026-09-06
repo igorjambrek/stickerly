@@ -10,7 +10,16 @@
 
 import type { Album, Page, Slot } from './types.ts';
 
-/** Assign 1..N in reading order. Returns new page objects; the input is untouched. */
+/**
+ * Assign 1..N in reading order. Returns new page objects; the input is untouched.
+ *
+ * Pages are renumbered into a run with no gaps, because a page is a page. A
+ * slot's position is left exactly as it was: it names a cell on the grid, and
+ * a turned sticker occupying two of them leaves a cell behind that belongs to
+ * nobody. Closing that gap would move every sticker after it into the wrong
+ * square. The sticker *numbers* still run 1..N with nothing missing, which is
+ * the part a child counts.
+ */
 export function renumber(pages: Page[]): Page[] {
   let next = 1;
   return [...pages]
@@ -20,7 +29,7 @@ export function renumber(pages: Page[]): Page[] {
       position: pageIndex,
       slots: [...page.slots]
         .sort((a, b) => a.position - b.position)
-        .map((slot, slotIndex) => ({ ...slot, position: slotIndex, number: next++ })),
+        .map((slot) => ({ ...slot, number: next++ })),
     }));
 }
 

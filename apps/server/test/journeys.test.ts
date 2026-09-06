@@ -217,11 +217,11 @@ describe('a child makes an album, fills it and prints it', () => {
       readPdf(mila, token, 'stickers'),
     ]);
 
-    // A folded sheet is two PDF pages, one per side through the printer; a
-    // sticker sheet is printed on one side, so it is one.
+    // Every sheet is two PDF pages, one per side through the printer — the
+    // sticker sheet included, because its numbers print on the backing paper.
     assert.equal(cover.pages, summary.coverSheets * 2);
     assert.equal(pages.pages, summary.pageSheets * 2);
-    assert.equal(stickers.pages, summary.stickerSheets);
+    assert.equal(stickers.pages, summary.stickerSheets * 2);
     assert.ok(summary.stickerSheets >= 1, 'three stickers need a sheet to be printed on');
   });
 
@@ -361,7 +361,7 @@ describe('a friend joins by invite and fills a sticker', () => {
     assert.equal(summary.stickerCount, 1, 'the album has one sticker, whoever put it there');
 
     const stickers = await readPdf(mila, token, 'stickers');
-    assert.equal(stickers.pages, 1);
-    assert.equal(stickers.pages, summary.stickerSheets);
+    assert.equal(summary.stickerSheets, 1);
+    assert.equal(stickers.pages, 2, 'one sheet: the sticker on the front, its number on the back');
   });
 });

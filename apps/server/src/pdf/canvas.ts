@@ -18,6 +18,8 @@ import {
   appendBezierCurve,
   clip,
   closePath,
+  concatTransformationMatrix,
+  degrees,
   endPath,
   lineTo,
   moveTo,
@@ -25,8 +27,8 @@ import {
   pushGraphicsState,
   rgb,
 } from 'pdf-lib';
-import type { Crop, PathCmd, Rect, Shape } from '@album/shared';
-import { coverPlacement, mmToPt, pathToSvgD, ptToMm, shapeToPathCmds } from '@album/shared';
+import type { Crop, PathCmd, QuarterTurn, Rect, Shape } from '@album/shared';
+import { mmToPt, pathToSvgD, photoPlacement, ptToMm, shapeToPathCmds } from '@album/shared';
 
 export type Align = 'left' | 'center' | 'right';
 
@@ -52,6 +54,18 @@ export function color(hex: string) {
   if (!m) return rgb(0, 0, 0);
   const v = parseInt(m[1]!, 16);
   return rgb(((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255);
+}
+
+/**
+ * A point turned clockwise about another, in these y-down millimetres.
+ *
+ * Only quarter turns arrive here, so the sines and cosines are exact and a
+ * turned rectangle keeps landing on whole millimetres.
+ */
+function turnPoint(x: number, y: number, cx: number, cy: number, turn: QuarterTurn): [number, number] {
+  const cos = turn === 0 ? 1 : turn === 180 ? -1 : 0;
+  const sin = turn === 90 ? 1 : turn === 270 ? -1 : 0;
+  return [cx + (x - cx) * cos - (y - cy) * sin, cy + (x - cx) * sin + (y - cy) * cos];
 }
 
 /** Quadratic control point -> the equivalent cubic pair. */
@@ -246,20 +260,62 @@ export class Panel {
 
   /**
    * Draw an image so it covers `box`, clipped to `box` with rounded corners.
-   * The placement comes from shared code, so the editor shows the same framing.
+   * The placement comes from shared code, so the editor shows the same framing
+   * — the child's turn of the photo included.
+   *
+   * A turned photo is fitted to the box lying on its side and then rotated
+   * back onto it. pdf-lib rotates an image about the corner it is anchored at,
+   * so the anchor is turned first and the rotation applied around it; the clip
+   * stays the upright box, which the turned frame lands exactly on.
    */
   image(img: PDFImage, box: Rect, crop: Crop, radius = 0, opacity?: number): void {
-    const placed = coverPlacement(box, img.width, img.height, crop);
+    const { image: placed, rotate } = photoPlacement(box, img.width, img.height, crop);
+    // drawImage anchors at the bottom-left, which is the top-left of a rect in
+    // these y-down millimetres.
+    const [ax, ay] = turnPoint(placed.x, placed.y + placed.h, box.x + box.w / 2, box.y + box.h / 2, rotate);
     this.withClip(box, radius, () => {
       this.page.drawImage(img, {
-        x: this.ptX(placed.x),
-        // drawImage anchors at the bottom-left, so shift down by the height.
-        y: this.ptY(placed.y + placed.h),
+        x: this.ptX(ax),
+        y: this.ptY(ay),
         width: mmToPt(placed.w * this.scale),
         height: mmToPt(placed.h * this.scale),
+        // Clockwise on the page is anticlockwise in PDF's y-up space.
+        rotate: degrees(-rotate),
         opacity,
       });
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // Turning
+  // -------------------------------------------------------------------------
+
+  /**
+   * Draw something on its side, inside `cell`.
+   *
+   * This is how a lying sticker reaches an upright sticker sheet. The sheet has
+   * one grid with one cut pitch — a rectangle of paper is a rectangle of paper,
+   * and whoever cuts it out turns it — so the sticker is drawn into a panel a
+   * quarter turn clockwise from this one, `cell` turned on its side.
+   *
+   * Every primitive on this class works in absolute points, so rather than
+   * teaching each of them about the turn, the turn is pushed onto the PDF
+   * itself: the callback draws as though nothing were unusual, and the graphics
+   * state rotates the lot about the cell's top-left corner and slides it back
+   * across the cell's width.
+   */
+  turned(cell: Rect, draw: (panel: Panel) => void): void {
+    const px = this.ptX(cell.x);
+    const py = this.ptY(cell.y);
+    const across = mmToPt(cell.w * this.scale);
+    this.page.pushOperators(
+      pushGraphicsState(),
+      concatTransformationMatrix(0, -1, 1, 0, px - py + across, py + px),
+    );
+    // The panel the callback gets is the cell lying down: what it draws as
+    // 70 x 50 comes out as the 50 x 70 the grid reserved.
+    draw(this.inset({ x: cell.x, y: cell.y, w: cell.h, h: cell.w }));
+    this.page.pushOperators(popGraphicsState());
   }
 
   // -------------------------------------------------------------------------

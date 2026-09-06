@@ -1,5 +1,16 @@
-import type { Album, AlbumSize, AlbumUpdate, Crop, Features, Lang, Person, PictureSearch } from '@album/shared';
-import { SOCKET_HEADER } from '@album/shared';
+import type {
+  Album,
+  AlbumSize,
+  AlbumUpdate,
+  Crop,
+  Features,
+  Lang,
+  Person,
+  PictureSearch,
+  PrintOptions,
+  StickerOrientation,
+} from '@album/shared';
+import { DEFAULT_PRINT_OPTIONS, SOCKET_HEADER } from '@album/shared';
 import { readDeviceKey } from './deviceKey.ts';
 
 /**
@@ -83,6 +94,7 @@ export interface CreateAlbumInput {
   templateId: string;
   coverVariantId: string;
   size: AlbumSize;
+  stickerOrientation: StickerOrientation;
   slotsPerPage: number;
   title: string;
   ownerName: string;
@@ -145,6 +157,10 @@ export const api = {
   updatePage: (token: string, pageId: string, patch: { title?: string; position?: number }) =>
     request<AlbumResponse>(`${albumBase(token)}/pages/${pageId}`, jsonBody('PATCH', patch)),
 
+  /** Turn one sticker the other way up. It takes the room of two, or gives one back. */
+  turnSlot: (token: string, slotId: string) =>
+    request<AlbumResponse>(`${albumBase(token)}/slots/${encodeURIComponent(slotId)}/turn`, { method: 'POST' }),
+
   setSlot: (token: string, slotId: string, patch: { label?: string; imageId?: string | null; crop?: Crop }) =>
     request<AlbumResponse>(`${albumBase(token)}/slots/${slotId}`, jsonBody('PUT', patch)),
 
@@ -195,7 +211,14 @@ export const api = {
 
   printSummary: (token: string) => request<PrintSummary>(`${albumBase(token)}/print/summary`),
 
-  printUrl: (token: string, part: 'cover' | 'pages' | 'stickers') => `${albumBase(token)}/print/${part}.pdf`,
+  /**
+   * A PDF, printed the way this job asked for. The options ride in the query
+   * string rather than in the album, because the same album can be printed
+   * both ways; all three files are asked, since the cover's own instructions
+   * depend on where the numbers went.
+   */
+  printUrl: (token: string, part: 'cover' | 'pages' | 'stickers', opts: PrintOptions = DEFAULT_PRINT_OPTIONS) =>
+    `${albumBase(token)}/print/${part}.pdf?numbers=${opts.numbers}`,
 
   /** A passport. Nothing here needs one to already exist except `me`. */
   createPerson: (input: { nickname?: string; avatar?: string; lang: Lang }) =>
