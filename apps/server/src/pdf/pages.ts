@@ -28,6 +28,7 @@ import {
   mmToPt,
   padToSignature,
   pageHeaderRect,
+  slotSpanOf,
 } from '@album/shared';
 import { Panel } from './canvas.ts';
 import type { PrintContext } from './common.ts';
@@ -93,12 +94,14 @@ function drawPageChrome(art: Panel, ctx: PrintContext, pageNumber: number, headi
 
 function drawStickerPage(page: Panel, art: Panel, ctx: PrintContext, album: Page, pageNumber: number): void {
   drawPageChrome(art, ctx, pageNumber, album.title || ctx.album.title);
-  const { slotRect, slotLabelRect } = ctx.layout;
   for (const slot of album.slots) {
-    // A slot beyond this album's grid cannot be drawn; it also cannot exist,
-    // because the grid is what created the slots in the first place.
-    if (slot.position >= ctx.layout.slotsPerPage) continue;
-    drawSlotOutline(page, ctx, slotRect(slot.position), slotLabelRect(slot.position), slot);
+    // Where this sticker sits, and how much of the grid it takes: one cell, or
+    // two when it has been turned against the album. A slot beyond the grid
+    // cannot be drawn; it also cannot exist, because the grid is what created
+    // the slots in the first place.
+    const span = slotSpanOf(ctx.layout, slot.position, slot.orientation);
+    if (!span) continue;
+    drawSlotOutline(page, ctx, span.rect, span.label, slot);
   }
 }
 

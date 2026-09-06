@@ -18,8 +18,8 @@
  */
 
 import { useEffect, useState } from 'react';
-import type { Lang, PartPrintInfo, Template } from '@album/shared';
-import { printShopNote } from '@album/shared';
+import type { Lang, NumberSide, PartPrintInfo, Template } from '@album/shared';
+import { DEFAULT_NUMBER_SIDE, NUMBER_SIDES, printShopNote } from '@album/shared';
 import { api, type PrintSummary } from '../api.ts';
 import { useT } from '../lang.ts';
 import { PART_LOOK, noticePath, printParts } from '../printing.ts';
@@ -55,11 +55,60 @@ function PartRow({ info, href, accent }: { info: PartPrintInfo; href: string; ac
   );
 }
 
+/**
+ * The choice, drawn rather than described: one sticker with the number in its
+ * corner, or two — the sticker and the backing behind it — with the number on
+ * the paper that gets thrown away.
+ */
+function NumberSideGlyph({ side, accent }: { side: NumberSide; accent: string }) {
+  const sticker = (x: number, dashed: boolean) => (
+    <g>
+      <rect
+        x={x}
+        y={3}
+        width={24}
+        height={34}
+        rx={3}
+        className={dashed ? 'numglyph__back' : 'numglyph__face'}
+        strokeDasharray={dashed ? '3 2.4' : undefined}
+      />
+      {!dashed && <rect x={x + 2} y={28} width={20} height={7} rx={2} fill={accent} opacity={0.7} />}
+    </g>
+  );
+  return (
+    <svg className="numglyph" viewBox="0 0 60 40" aria-hidden="true">
+      {side === 'sticker' ? (
+        <>
+          {sticker(18, false)}
+          <circle cx={24} cy={11} r={6} fill={accent} />
+          <text x={24} y={14.6} className="numglyph__n numglyph__n--badge">
+            7
+          </text>
+        </>
+      ) : (
+        <>
+          {sticker(4, false)}
+          {sticker(32, true)}
+          <text x={44} y={25} className="numglyph__n" fill={accent}>
+            7
+          </text>
+        </>
+      )}
+    </svg>
+  );
+}
+
 export function PrintDialog({ token, title, lang, template, onClose }: PrintDialogProps) {
   const t = useT();
   const [summary, setSummary] = useState<PrintSummary | null>(null);
   const [failed, setFailed] = useState(false);
   const [copied, setCopied] = useState<'note' | 'link' | null>(null);
+  /**
+   * Where the sticker numbers go. It belongs to this print run and not to the
+   * album, so it lives here for as long as the dialog is open and travels on
+   * in the download links and in the print-shop sheet's own address.
+   */
+  const [numbers, setNumbers] = useState<NumberSide>(DEFAULT_NUMBER_SIDE);
 
   useEffect(() => {
     let live = true;
@@ -80,7 +129,8 @@ export function PrintDialog({ token, title, lang, template, onClose }: PrintDial
   }, [copied]);
 
   const accent = template.palette.badge;
-  const parts = summary ? printParts(t, summary, title, lang) : [];
+  const opts = { numbers };
+  const parts = summary ? printParts(t, summary, title, lang, opts) : [];
   const shopNote = printShopNote(t, parts);
 
   const copy = async (what: 'note' | 'link', text: string) => {
@@ -115,7 +165,7 @@ export function PrintDialog({ token, title, lang, template, onClose }: PrintDial
           </p>
 
           {parts.map((info) => (
-            <PartRow key={info.part} info={info} href={api.printUrl(token, info.part)} accent={accent} />
+            <PartRow key={info.part} info={info} href={api.printUrl(token, info.part, opts)} accent={accent} />
           ))}
 
           {summary.fillerCount > 0 && (
@@ -124,11 +174,33 @@ export function PrintDialog({ token, title, lang, template, onClose }: PrintDial
             </p>
           )}
 
+          {/*
+            The one choice left in the job. It changes the sticker sheet above
+            it — one side or two — so the badges move as it is made.
+          */}
+          <h3 className="print-section">{t('print.numbers.title')}</h3>
+          <div className="numgrid">
+            {NUMBER_SIDES.map((side) => (
+              <button
+                key={side}
+                type="button"
+                className="numcard"
+                aria-pressed={numbers === side}
+                onClick={() => setNumbers(side)}
+              >
+                <NumberSideGlyph side={side} accent={accent} />
+                <strong>{t(`print.numbers.${side}`)}</strong>
+                <span className="numcard__hint">{t(`print.numbers.${side}Hint`)}</span>
+              </button>
+            ))}
+          </div>
+
           <h3 className="print-section">{t('print.howToTitle')}</h3>
           <ol className="steps">
             <li>{t('print.step.scale')}</li>
             <li>{t('print.step.paper', { sheet: summary.sheetPaper })}</li>
             <li>{t('print.step.duplex')}</li>
+            {numbers === 'backing' && <li>{t('print.step.stickerBacks')}</li>}
             <li>{t('print.step.fold')}</li>
             <li>{t('print.step.check')}</li>
           </ol>
@@ -138,13 +210,13 @@ export function PrintDialog({ token, title, lang, template, onClose }: PrintDial
             {t('print.noticeLead')}
           </p>
           <div className="print-actions">
-            <a className="btn btn--primary" style={{ background: accent }} href={noticePath(token)} target="_blank" rel="noreferrer">
+            <a className="btn btn--primary" style={{ background: accent }} href={noticePath(token, opts)} target="_blank" rel="noreferrer">
               📄 {t('print.openNotice')}
             </a>
             <button
               type="button"
               className="btn"
-              onClick={() => void copy('link', `${window.location.origin}${noticePath(token)}`)}
+              onClick={() => void copy('link', `${window.location.origin}${noticePath(token, opts)}`)}
             >
               🔗 {copied === 'link' ? t('editor.linkCopied') : t('print.copyLink')}
             </button>

@@ -3,7 +3,7 @@
  *
  * The mirror of `apps/server/src/pdf/cover.ts`: same artwork from the same
  * template code, the same plaque box in the same reference millimetres, and
- * the same photo framing through `coverPlacement`. A child who likes what they
+ * the same photo framing through `photoPlacement`. A child who likes what they
  * see here gets that on paper.
  *
  * Positions are percentages of the reference A4 page and font sizes are
@@ -14,7 +14,8 @@
 import type { CSSProperties } from 'react';
 import { useMemo } from 'react';
 import type { Crop, Lang, Template } from '@album/shared';
-import { REF_PAGE, artRng, coverArtOf, coverPalette, coverPlacement, coverWantsPhoto, t } from '@album/shared';
+import { DEFAULT_CROP, REF_PAGE, artRng, coverArtOf, coverPalette, coverWantsPhoto, t } from '@album/shared';
+import { FramedPhoto } from './FramedPhoto.tsx';
 import { ShapeCanvas } from './ShapeCanvas.tsx';
 
 /** Reference millimetres as a share of the cover, for anything that must scale with it. */
@@ -70,24 +71,18 @@ export function CoverSheet({
   // A photo cover with no photo yet falls back to the theme's artwork, exactly
   // as the PDF does, so the preview never shows a hole the print would not.
   const usePhoto = coverWantsPhoto(template, variantId) && Boolean(photo);
-  const placed =
-    usePhoto && photo ? coverPlacement({ x: 0, y: 0, w: REF_PAGE.w, h: REF_PAGE.h }, photo.w, photo.h, crop ?? { x: 0.5, y: 0.5, scale: 1 }) : null;
 
   return (
     <div className={`cover-sheet${className ? ` ${className}` : ''}`} style={style}>
-      {usePhoto && photo && placed ? (
+      {usePhoto && photo ? (
         <>
-          <img
+          <FramedPhoto
             className="cover-sheet__photo"
+            box={REF_PAGE}
             src={photo.url}
-            alt=""
-            draggable={false}
-            style={{
-              left: `${(placed.x / REF_PAGE.w) * 100}%`,
-              top: `${(placed.y / REF_PAGE.h) * 100}%`,
-              width: `${(placed.w / REF_PAGE.w) * 100}%`,
-              height: `${(placed.h / REF_PAGE.h) * 100}%`,
-            }}
+            width={photo.w}
+            height={photo.h}
+            crop={crop ?? DEFAULT_CROP}
           />
           <span className="cover-sheet__scrim" />
           <span className="cover-sheet__edge" style={{ borderColor: palette.coverAccent, borderWidth: cq(1.8), inset: cq(5) }} />

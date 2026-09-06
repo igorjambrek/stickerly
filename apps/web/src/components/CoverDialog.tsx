@@ -19,7 +19,7 @@
 
 import { useRef, useState, type PointerEvent } from 'react';
 import type { Album, Template } from '@album/shared';
-import { REF_PAGE, coverWantsPhoto, countFilled, panCrop } from '@album/shared';
+import { DEFAULT_CROP, REF_PAGE, coverWantsPhoto, countFilled, panCrop } from '@album/shared';
 import { api, type CoverPatch } from '../api.ts';
 import { useFeatures } from '../features.ts';
 import { useT } from '../lang.ts';
@@ -62,10 +62,10 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
   const photo = image ? { url: api.imageUrl(token, image.id), w: image.w, h: image.h } : null;
   const framable = photo && coverWantsPhoto(template, album.coverVariantId);
 
-  /** However the picture arrived, it starts centred and unzoomed. */
+  /** However the picture arrived, it starts centred, unzoomed and upright. */
   function framePhoto(imageId: string) {
-    onChange({ coverImageId: imageId, coverCrop: { x: 0.5, y: 0.5, scale: 1 } });
-    setCrop({ x: 0.5, y: 0.5, scale: 1 });
+    onChange({ coverImageId: imageId, coverCrop: { ...DEFAULT_CROP } });
+    setCrop({ ...DEFAULT_CROP });
   }
 
   async function upload(file: File) {

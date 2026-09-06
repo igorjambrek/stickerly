@@ -1,6 +1,6 @@
 /** Wire types shared by the server and the editor. */
 
-import type { AlbumSize } from './geometry.ts';
+import type { AlbumSize, StickerOrientation } from './geometry.ts';
 
 export type Lang = 'sr-Cyrl' | 'sr-Latn' | 'en' | 'ru';
 
@@ -18,9 +18,15 @@ export interface Crop {
   y: number;
   /** 1 = the image exactly covers the window; larger zooms in. */
   scale: number;
+  /**
+   * Quarter turns clockwise: 0, 90, 180 or 270. A photo arrives lying on its
+   * side often enough — and a wide photo in a tall sticker often enough — that
+   * turning it is part of framing it, not a separate kind of edit.
+   */
+  rotate: number;
 }
 
-export const DEFAULT_CROP: Crop = { x: 0.5, y: 0.5, scale: 1 };
+export const DEFAULT_CROP: Crop = { x: 0.5, y: 0.5, scale: 1, rotate: 0 };
 
 export interface ImageRef {
   id: string;
@@ -32,8 +38,18 @@ export interface ImageRef {
 export interface Slot {
   id: string;
   pageId: string;
-  /** 0-based position within the page. */
+  /**
+   * Which grid cell on the page this slot starts at. Not a running index: a
+   * turned sticker takes two cells, so the cell after it belongs to no slot at
+   * all and the numbers below it carry on regardless.
+   */
   position: number;
+  /**
+   * Which way this one stands. Usually the album's own, but a child editing a
+   * football album eventually wants one wide sticker for the whole team, and
+   * that sticker takes the room of the two it replaced.
+   */
+  orientation: StickerOrientation;
   /** 1-based sticker number, unique across the album and assigned automatically. */
   number: number;
   label: string;
@@ -67,6 +83,12 @@ export interface Album {
   coverCrop: Crop;
   /** Chosen once, at creation: it decides the paper and the page grid. */
   size: AlbumSize;
+  /**
+   * Which way up this album stands its stickers. Locked at creation with the
+   * two below, for the same reason: it decides the shape of every slot, and
+   * turning it in an album that already has photos would re-cut all of them.
+   */
+  stickerOrientation: StickerOrientation;
   slotsPerPage: number;
   lang: Lang;
   ownerName: string;

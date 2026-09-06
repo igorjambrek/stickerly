@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { inflateSync } from 'node:zlib';
 import { PDFDocument } from 'pdf-lib';
 import { REF_PAGE, STICKER, layoutFor, mmToPt } from '@album/shared';
 import { Panel } from '../src/pdf/canvas.ts';
@@ -96,5 +97,87 @@ describe('Panel', () => {
     // widthOf answers in the panel's units, so layout code written against the
     // reference page gets the same answer at every album size.
     near(art.widthOf('Hello', font, 10), panel.widthOf('Hello', font, 10), 'width in panel units');
+  });
+});
+
+/**
+ * A sticker lying on its side, printed in an upright cell.
+ *
+ * The sticker sheet has one grid with one cut pitch: a lying sticker is drawn
+ * turned inside the same 50 x 70 cell as everything else, and whoever cuts it
+ * out turns it. That turn is a transformation pushed onto the PDF itself, so
+ * the only honest way to check it is to read the operators back out and put a
+ * point through them — which is what this does.
+ */
+describe('Panel.turned', () => {
+  /** Every content stream in a saved PDF, as text. pdf-lib deflates them. */
+  function operators(pdf: Buffer): string {
+    const text = pdf.toString('latin1');
+    const out: string[] = [];
+    for (const m of text.matchAll(/stream\r?\n/g)) {
+      const start = m.index + m[0].length;
+      const end = text.indexOf('endstream', start);
+      if (end < 0) continue;
+      try {
+        out.push(inflateSync(pdf.subarray(start, end)).toString('latin1'));
+      } catch {
+        // Not a deflated stream; some other object's bytes.
+      }
+    }
+    return out.join('\n');
+  }
+
+  /** The `cm` matrix the turn pushed, read out of the page's own content stream. */
+  async function matrixOf(draw: (panel: Panel) => void, cell: { x: number; y: number; w: number; h: number }) {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([mmToPt(210), mmToPt(297)]);
+    const sheet = new Panel(page, 0, 0, 210, 297);
+    sheet.turned(cell, draw);
+
+    const found = /([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) ([-\d.]+) cm/.exec(
+      operators(Buffer.from(await doc.save())),
+    );
+    assert.ok(found, 'the turn should push a transformation matrix');
+    const [a, b, c, d, e, f] = found.slice(1).map(Number) as [number, number, number, number, number, number];
+    return (x: number, y: number): [number, number] => [a * x + c * y + e, b * x + d * y + f];
+  }
+
+  it('lands a lying sticker exactly on the upright cell reserved for it', async () => {
+    const cell = { x: 5, y: 6, w: STICKER.w, h: STICKER.h };
+    let panel: Panel | undefined;
+    const through = await matrixOf((p) => (panel = p), cell);
+    assert.ok(panel, 'the callback is handed a panel to draw into');
+
+    // The panel it draws into is the cell lying down: 70 across, 50 down.
+    near(panel!.w, STICKER.h, 'the turned panel is as wide as the sticker is tall');
+    near(panel!.h, STICKER.w, 'and as tall as the sticker is wide');
+
+    // Every corner of what it draws has to land on the cell the grid reserved.
+    const corners: [number, number][] = [
+      [0, 0],
+      [panel!.w, 0],
+      [panel!.w, panel!.h],
+      [0, panel!.h],
+    ];
+    const points = corners.map(([x, y]) => through(panel!.ptX(x), panel!.ptY(y)));
+    const xs = points.map((p) => p[0]);
+    const ys = points.map((p) => p[1]);
+
+    near(Math.min(...xs), mmToPt(cell.x), 'left edge of the cell');
+    near(Math.max(...xs), mmToPt(cell.x + cell.w), 'right edge of the cell');
+    near(Math.min(...ys), mmToPt(297 - (cell.y + cell.h)), 'bottom edge of the cell');
+    near(Math.max(...ys), mmToPt(297 - cell.y), 'top edge of the cell');
+  });
+
+  it('turns clockwise, so the sticker top ends up on the right of the cell', async () => {
+    const cell = { x: 5, y: 6, w: STICKER.w, h: STICKER.h };
+    let panel: Panel | undefined;
+    const through = await matrixOf((p) => (panel = p), cell);
+
+    // The top-left of the lying sticker comes out at the top-right of the
+    // upright cell that was reserved for it.
+    const [x, y] = through(panel!.ptX(0), panel!.ptY(0));
+    near(x, mmToPt(cell.x + cell.w), 'the badge corner moves to the right edge');
+    near(y, mmToPt(297 - cell.y), 'and stays at the top');
   });
 });

@@ -12,7 +12,7 @@ back:
 | --- | --- | --- |
 | `<album> - cover.pdf` | one sheet, double-sided | the cover, folded around the block |
 | `<album> - pages.pdf` | sheets, double-sided | the album pages, imposed so folding puts them in order |
-| `<album> - stickers.pdf` | A4 sticker paper | the stickers, numbered to match their slots |
+| `<album> - stickers.pdf` | A4 sticker paper, double-sided | the stickers, with their numbers on the backing side (or on the picture, if you ask) |
 
 Each file is named after the album, with a suffix — `cover` / `pages` / `stickers`
 in English, `korice` / `strane` / `nalepnice` in Serbian, and so on — in the
@@ -42,6 +42,7 @@ paths in the PDF.
 
 ```text
 sticker      50 ×  70 mm   the classic Panini size, fixed in every album
+             70 ×  50 mm   the same sticker lying down, for a team photo
 big album   210 × 297 mm   A4 pages, printed two-up on A3 landscape sheets
 small album 148 × 210 mm   A5 pages, printed two-up on A4 landscape sheets
 ```
@@ -53,10 +54,24 @@ design at 71%, not a second one. The sticker grid is never scaled: a slot must
 measure exactly 50 × 70 mm on paper, so a smaller album gets *fewer* slots, not
 smaller ones. That is why "how many stickers on a page" is a real choice:
 
-| Album | Choices |
-| --- | --- |
-| small (A4 paper, A5 pages) | 2 or 4 per page |
-| big (A3 paper, A4 pages) | 4, 6 or 9 per page |
+| Album | Stickers standing up | Stickers lying down |
+| --- | --- | --- |
+| small (A4 paper, A5 pages) | 2 or 4 per page | 2 per page |
+| big (A3 paper, A4 pages) | 4, 6 or 9 per page | 4, 6 or 8 per page |
+
+A sticker can also be turned on its side — the same 50 × 70 rectangle, lying
+down. That is the third choice made when the album is created, and unlike the
+other two it is only a starting point: it sets the shape of the cells and of
+every sticker made in them.
+
+**Any one sticker can then be turned inside the album, and a turned one takes
+the room of two.** This is the team photo. A lying sticker is 70 mm across and
+the grid is cut into 50 mm cells, so the only place one fits is across two of
+them: turning a sticker swallows the sticker beside it — the editor asks first
+when there is a photo to lose — and standing it back up hands that cell out
+again as a fresh empty sticker. On the sticker sheet it is printed lying inside
+an ordinary upright cell, so the sheet keeps one grid and one cut pitch; whoever
+cuts it out turns it.
 
 The count is per page and applies to every page. Album size and stickers-per-page
 are both locked at creation — either would add or destroy slots in an album that
@@ -104,8 +119,12 @@ The print dialog says this in the child's language; here it is for the grown-up:
    off. This is the only setting that matters.
 2. **Three files, three papers** (table below). The dialog badges every download
    with its own, because this is what a copy shop gets wrong.
-3. **Double-sided, flip on the short edge** for the cover and pages — the
-   imposition assumes it. Sticker sheets are single-sided.
+3. **Double-sided, flip on the short edge** — all three files, and the
+   imposition assumes that flip. The sticker sheet is double-sided too: the
+   numbers print on the backing paper, behind their own stickers. If your
+   printer will not take sticker paper twice, the dialog's other option puts
+   the number back in the corner of the picture and the sheet becomes
+   single-sided.
 4. Fold the page sheets in half, nest them with the cover outermost, staple
    twice along the fold.
 5. Check with a ruler: the bar in the bottom margin of a sticker sheet must
@@ -115,7 +134,7 @@ The print dialog says this in the child's language; here it is for the grown-up:
 | --- | --- | --- | --- |
 | `<album> - cover.pdf` | card, **200–250 g/m²** | A3 landscape (A4 for a small album) | both, short-edge flip |
 | `<album> - pages.pdf` | **120–160 g/m²** — 80 g/m² office paper shows the photo through the sticker | A3 landscape (A4 for a small album) | both, short-edge flip |
-| `<album> - stickers.pdf` | **self-adhesive**, matte | A4 portrait, always | one |
+| `<album> - stickers.pdf` | **self-adhesive**, matte | A4 portrait, always | both, short-edge flip — numbers on the back; one side if you print them on the picture |
 
 The file name leads with the album's own name (Cyrillic titles transliterated to
 stay ASCII) and ends with the part in the album's language.
@@ -249,6 +268,7 @@ apps/server/
 apps/web/src/
   components/PageSheet   the album page, at a different zoom to the printed one
   components/CoverSheet  the cover, mirroring what cover.ts prints
+  components/FramedPhoto a photo filling a window, turned as the child left it
   components/Presence    the roster, with whoever is here right now lit up
   screens/               Home, Editor, PrintNotice (the sheet at /a/<token>/print)
   live.ts                the album's socket: reconnecting, and into the store
@@ -256,13 +276,54 @@ apps/web/src/
 
 ### Decisions worth knowing about
 
-**A sticker is never resized.** It is a physical 50 × 70 mm object, so sticker
-sheets are identical across album sizes and a page that cannot fit nine of them
-gets four. Everything else on a page scales; this does not.
+**A sticker is never resized — only turned.** It is a physical 50 × 70 mm
+object, so sticker sheets are identical across album sizes and a page that
+cannot fit nine of them gets four. Everything else on a page scales; this does
+not. Turning one is the same rule seen from the other side: a lying sticker is
+70 mm across, and the only room for that on a grid of 50 mm cells is two cells,
+so a turned sticker costs the sticker beside it rather than being squeezed.
+`slotSpanOf` in `geometry.ts` is that rule, and both renderers ask it where a
+slot goes.
 
 **Sticker numbers are never stored.** A number is a slot's position in reading
 order, recomputed on every read, so adding a page, deleting one or dragging a
 sticker renumbers everything for free and the screen cannot drift from the print.
+A slot's *position* is stored, and it names a grid cell rather than a place in a
+queue — a turned sticker leaves a cell behind that belongs to nobody, and closing
+that gap would shove every sticker after it into the wrong square. The numbers
+still run 1..N with nothing missing, which is the part a child counts.
+
+**One sheet, one cut pitch.** A lying sticker is printed lying inside an upright
+cell on an ordinary portrait A4 sticker sheet, rather than getting sheets of its
+own. The paper that comes off the scissors is the same rectangle either way, so
+sorting the shapes onto separate sheets would only buy part-empty paper and a
+second calibration bar. `Panel.turned` pushes the quarter turn onto the PDF's own
+graphics state, so the code that draws a sticker never learns about it.
+
+**The number is printed on the backing paper, not on the picture.** A sticker's
+number has one job — get it cut out and matched to its slot — and then it is in
+the way for as long as the album lasts. So each sticker sheet is printed on both
+sides: the stickers on the front, one big numeral in the middle of each cell on
+the back, which is the liner the child peels off and throws away. The back is
+the front mirrored top to bottom, because the whole job is printed with a
+short-edge flip and the sticker sheet is the one upright sheet in it
+(`stickerBackRect` in `geometry.ts`). The numbers are bare numerals rather than
+the app's filled badges: the liner is silicone-coated and holds toner badly, and
+a numeral alone on white is the most legible mark per drop of ink. The name band
+across the foot of the sticker went from nearly solid to a wash for the same
+reason — it is the foot of a child's photo before it is a label.
+
+**...but that one is a choice, and it belongs to the print run.** Plenty of
+printers will not feed self-adhesive paper a second time, and the Panini way —
+the number in the corner of the picture — is the one every child already knows.
+So the print dialog offers both, and picking the picture takes the sheet's
+second side away with it. The choice is never stored: the same album can be
+printed either way an hour apart, so it travels as `?numbers=` on the request
+and in the print-shop sheet's own link, and all three PDFs are told, because the
+cover's "how to stick them in" has to point a child at the right side. One
+function, `duplexFor`, turns the choice into a number of sides — which is what
+the download badges, the note for the copy shop and each PDF's own metadata all
+read from, so none of them can end up describing a different job.
 
 **Every cover is data.** A cover variant is a palette override plus four artwork
 functions; all 30 are built by `buildCover` from one skeleton — gradient sky,
@@ -270,6 +331,11 @@ wash, texture, a scene along the bottom, one emblem at the top — which is why
 they look like a set. Adding a cover is one entry in `covers.ts`. The bands where
 the title plaque and the sticker count sit are left quiet, so artwork can never
 make a title harder to read.
+
+**A theme can be changed after the fact; a size cannot; a sticker's own turn
+can.** Which way up the album stands its stickers is chosen with the size, but
+only as a starting point — the grid it decides is fixed, while any one sticker
+in it can be laid down or stood back up at any time.
 
 **A theme can be changed after the fact; a size cannot.** A theme decides
 colours and artwork and nothing else, so an album half full of dinosaur stickers

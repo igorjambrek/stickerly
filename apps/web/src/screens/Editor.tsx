@@ -30,7 +30,16 @@ import {
   type DragEndEvent,
 } from '@dnd-kit/core';
 import type { Page, Slot } from '@album/shared';
-import { countEmpty, countFilled, getTemplate, layoutFor, spreadOfPage, spreads } from '@album/shared';
+import {
+  countEmpty,
+  countFilled,
+  getTemplate,
+  layoutFor,
+  otherOrientation,
+  slotSpanOf,
+  spreadOfPage,
+  spreads,
+} from '@album/shared';
 import { api } from '../api.ts';
 import { useLangStore, useT } from '../lang.ts';
 import { useLiveAlbum } from '../live.ts';
@@ -109,7 +118,10 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
   }, [album?.lang, album?.title, token, setUiLang, album]);
 
   const template = useMemo(() => getTemplate(album?.templateId ?? ''), [album?.templateId]);
-  const layout = useMemo(() => layoutFor(album?.size, album?.slotsPerPage), [album?.size, album?.slotsPerPage]);
+  const layout = useMemo(
+    () => layoutFor(album?.size, album?.slotsPerPage, album?.stickerOrientation),
+    [album?.size, album?.slotsPerPage, album?.stickerOrientation],
+  );
 
   /**
    * A mouse drags on the eighth pixel; a finger has to hold still for a moment
@@ -216,6 +228,30 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
     } finally {
       setUploading(false);
     }
+  }
+
+  /**
+   * Lay a sticker on its side, or stand it back up.
+   *
+   * A lying sticker is 70 mm across and the grid is cut into 50 mm cells, so
+   * the only room for one is across two of them — which means the sticker
+   * beside it goes. That is worth a question when there is a photo in it, and
+   * worth none at all when there is not: an empty square is not a loss, and a
+   * child laying out a page should not have to dismiss a dialog to do it.
+   */
+  async function turnSlot(slot: Slot) {
+    const span = slotSpanOf(layout, slot.position, otherOrientation(slot.orientation));
+    if (!span) return;
+    const page = pages.find((p) => p.id === slot.pageId);
+    // By span, not by position: a neighbour may itself be lying across two
+    // cells, and this sticker would come to rest half on top of it.
+    const losing = (page?.slots ?? []).some((other) => {
+      if (other.id === slot.id || !other.imageId) return false;
+      const cells = slotSpanOf(layout, other.position, other.orientation)?.cells ?? [other.position];
+      return cells.some((cell) => span.cells.includes(cell));
+    });
+    if (losing && !window.confirm(t('editor.confirmTurnSticker'))) return;
+    await store.turnSlot(slot.id);
   }
 
   function onDragEnd(event: DragEndEvent) {
@@ -347,7 +383,16 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
   const saved = status === 'saving' ? '⏳' : status === 'error' ? '⚠' : '✓';
 
   return (
-    <div className="editor" style={{ ['--accent' as string]: accent, ['--ground' as string]: template.palette.pageBg }}>
+    <div
+      className="editor"
+      style={{
+        ['--accent' as string]: accent,
+        ['--ground' as string]: template.palette.pageBg,
+        /* Every sticker-shaped box below this — the framer, the drop zone, a
+           search result — is this album's sticker, however it is turned. */
+        ['--sticker-aspect' as string]: `${layout.sticker.w} / ${layout.sticker.h}`,
+      }}
+    >
       <header className="topbar">
         <button type="button" className="btn btn--ghost btn--icon" onClick={onHome} aria-label={t('home.back')}>
           ←
@@ -594,6 +639,11 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
           uploading={uploading}
           onUpload={(file) => void putPhoto(openSlot, file)}
           onChange={(patch) => void store.setSlot(openSlot, patch)}
+          onTurn={
+            slotSpanOf(layout, openSlot.position, otherOrientation(openSlot.orientation))
+              ? () => void turnSlot(openSlot)
+              : undefined
+          }
           onClose={() => setOpenSlotId(null)}
         />
       )}

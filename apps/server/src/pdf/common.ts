@@ -6,8 +6,8 @@
  */
 
 import type { PDFImage } from 'pdf-lib';
-import type { Album, ArtFn, PageLayout, Palette, Rect, Slot, Template, Translate } from '@album/shared';
-import { CALIBRATION, STICKER, STICKER_RADIUS } from '@album/shared';
+import type { Album, ArtFn, NumberSide, PageLayout, Palette, Rect, Size, Slot, Template, Translate } from '@album/shared';
+import { CALIBRATION, STICKER_RADIUS, stickerSize } from '@album/shared';
 import type { Fonts } from './fonts.ts';
 import { Panel } from './canvas.ts';
 
@@ -35,6 +35,8 @@ export interface PrintContext {
   /** The album-page palette. Cover panels use `cover.palette` instead. */
   palette: Palette;
   cover: CoverPlan;
+  /** Where this job puts a sticker's number: on the picture, or behind it. */
+  numbers: NumberSide;
   fonts: Fonts;
   t: Translate;
   /** Embedded print derivatives, keyed by image id. */
@@ -115,15 +117,27 @@ export function drawSlotOutline(page: Panel, ctx: PrintContext, box: Rect, label
 }
 
 /**
- * A printed sticker: photo to the edges, a colour band with the name, and the
- * number in the corner so it can be matched to its slot at a glance.
+ * A printed sticker: photo to the edges and a colour band with the name, and
+ * the number in the corner only if this job asked for it there. It is printed
+ * on the backing paper otherwise, behind this very cell, so that nothing
+ * covers the picture once the sticker is in the album.
+ *
+ * The band is washed over the photo rather than laid on top of it, because it
+ * is the foot of the picture as much as it is the name: a child's photo keeps
+ * its bottom edge, and a name written across it still reads.
+ *
+ * The rectangle comes from the slot rather than a constant, because a sticker
+ * can be lying down — either because the whole album is, or because this one
+ * was turned for a team photo. The name band still runs along its foot on a
+ * sticker that is now wider than it is tall.
  */
 export function drawSticker(sticker: Panel, ctx: PrintContext, slot: Slot): void {
   const inset = 1.6;
-  const inner: Rect = { x: inset, y: inset, w: STICKER.w - 2 * inset, h: STICKER.h - 2 * inset };
+  const size: Size = stickerSize(slot.orientation);
+  const inner: Rect = { x: inset, y: inset, w: size.w - 2 * inset, h: size.h - 2 * inset };
 
   // The white peel border.
-  sticker.shape({ k: 'rect', x: 0, y: 0, w: STICKER.w, h: STICKER.h, rx: STICKER_RADIUS, fill: '#FFFFFF' });
+  sticker.shape({ k: 'rect', x: 0, y: 0, w: size.w, h: size.h, rx: STICKER_RADIUS, fill: '#FFFFFF' });
 
   const image = slot.imageId ? ctx.images.get(slot.imageId) : undefined;
   if (image) {
@@ -135,7 +149,7 @@ export function drawSticker(sticker: Panel, ctx: PrintContext, slot: Slot): void
   // Name band across the foot of the sticker.
   const bandH = 9;
   const band: Rect = { x: inner.x, y: inner.y + inner.h - bandH, w: inner.w, h: bandH };
-  sticker.shape({ k: 'rect', ...band, rx: STICKER_RADIUS - 0.6, fill: ctx.palette.badge, opacity: 0.92 });
+  sticker.shape({ k: 'rect', ...band, rx: STICKER_RADIUS - 0.6, fill: ctx.palette.badge, opacity: 0.7 });
   if (slot.label) {
     sticker.fitText(slot.label, {
       x: band.x + band.w / 2,
@@ -149,15 +163,15 @@ export function drawSticker(sticker: Panel, ctx: PrintContext, slot: Slot): void
     });
   }
 
-  drawNumberBadge(sticker, ctx, 7.6, 7.6, 5, slot.number);
+  if (ctx.numbers === 'sticker') drawNumberBadge(sticker, ctx, 7.6, 7.6, 5, slot.number);
 
   // A hairline so the sticker's edge is visible against white paper.
   sticker.shape({
     k: 'rect',
     x: 0.15,
     y: 0.15,
-    w: STICKER.w - 0.3,
-    h: STICKER.h - 0.3,
+    w: size.w - 0.3,
+    h: size.h - 0.3,
     rx: STICKER_RADIUS,
     stroke: '#C9CDD2',
     sw: 0.25,

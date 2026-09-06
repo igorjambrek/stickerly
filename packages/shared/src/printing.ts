@@ -27,6 +27,38 @@ export type PrintPart = 'cover' | 'pages' | 'stickers';
 export const PRINT_PARTS: readonly PrintPart[] = ['cover', 'pages', 'stickers'];
 
 /**
+ * Where a sticker's number is printed — the one thing about the job the child
+ * (or the grown-up at the printer) gets to choose.
+ *
+ * `backing` puts it on the paper that peels off: it is there while the sticker
+ * is cut out and matched to its slot, and gone once the sticker is in the
+ * album, so nothing is printed over the picture. It costs a second pass
+ * through the printer, on paper whose back side not every printer will take.
+ * `sticker` puts it back in the corner of the picture, the way a real Panini
+ * sticker carries it, and the sheet is printed on one side only.
+ */
+export type NumberSide = 'sticker' | 'backing';
+
+export const NUMBER_SIDES: readonly NumberSide[] = ['backing', 'sticker'];
+
+export const DEFAULT_NUMBER_SIDE: NumberSide = 'backing';
+
+export const isNumberSide = (v: unknown): v is NumberSide => NUMBER_SIDES.includes(v as NumberSide);
+
+/**
+ * The choices that belong to a print job rather than to the album.
+ *
+ * An album can be printed twice, differently, without changing anything about
+ * itself — so this travels with the request (and in the print-shop sheet's own
+ * URL), and is never stored.
+ */
+export interface PrintOptions {
+  numbers: NumberSide;
+}
+
+export const DEFAULT_PRINT_OPTIONS: PrintOptions = { numbers: DEFAULT_NUMBER_SIDE };
+
+/**
  * The half of the filename that says which part this is, in the album's own
  * language so a parent recognises it in their downloads folder. ASCII only —
  * the Cyrillic languages carry a transliterated word, because a filename is no
@@ -80,21 +112,42 @@ export interface PaperSpec {
    * is named by what it does instead, and its weight is whatever that comes in.
    */
   gsm: readonly [number, number] | null;
-  /** Printed on both sides? The imposition assumes a short-edge flip if so. */
+  /**
+   * Printed on both sides? The imposition assumes a short-edge flip if so.
+   *
+   * For the cover and the pages this is a fact about the fold. For the sticker
+   * sheet it is only what the default choice comes to — ask `duplexFor`, which
+   * is the one place that knows where this job puts its numbers.
+   */
   duplex: boolean;
+  /**
+   * Which way the sheet goes into the printer. The cover and the pages are
+   * landscape sheets to be folded down the middle; sticker paper is upright.
+   */
+  landscape: boolean;
 }
 
 /**
  * Cover: thin card, heavy enough to stay flat and light enough to fold and
  * staple through. Pages: well above the 80 g/m² of office paper, so a sticker
  * does not show the photo behind it. Stickers: whatever weight the shop's
- * self-adhesive A4 happens to be.
+ * self-adhesive A4 happens to be — and both sides of it, because a sticker's
+ * number is printed on the backing paper rather than over the picture.
  */
 export const PRINT_PAPER: Record<PrintPart, PaperSpec> = {
-  cover: { gsm: [200, 250], duplex: true },
-  pages: { gsm: [120, 160], duplex: true },
-  stickers: { gsm: null, duplex: false },
+  cover: { gsm: [200, 250], duplex: true, landscape: true },
+  pages: { gsm: [120, 160], duplex: true, landscape: true },
+  stickers: { gsm: null, duplex: true, landscape: false },
 };
+
+/**
+ * How many sides of the paper this part is printed on.
+ *
+ * Only the sticker sheet has a say: its second side exists to carry the
+ * numbers, so asking for them on the picture instead takes it away.
+ */
+export const duplexFor = (part: PrintPart, opts: PrintOptions = DEFAULT_PRINT_OPTIONS): boolean =>
+  part === 'stickers' ? opts.numbers === 'backing' : PRINT_PAPER[part].duplex;
 
 /** Sticker sheets are always A4, however big the album is. */
 export const STICKER_PAPER = 'A4';
@@ -103,7 +156,12 @@ export const STICKER_PAPER = 'A4';
 export const sheetPaperFor = (part: PrintPart, size: AlbumSize): string =>
   part === 'stickers' ? STICKER_PAPER : PAPER_NAME[size];
 
-/** How many sheets each part takes. Arithmetic on the album, nothing else. */
+/**
+ * How many sheets each part takes. Arithmetic on the album, nothing else.
+ *
+ * Every sticker costs one cell whichever way it stands, because a lying one is
+ * printed lying inside an upright cell and turned after it is cut out.
+ */
 export function printSheetCounts(album: Pick<Album, 'pages'>): Record<PrintPart, number> {
   const pages = album.pages.length + fillerPagesNeeded(album.pages.length);
   return {
@@ -154,13 +212,15 @@ export interface PartPrintInfo {
   specLine: string;
 }
 
-/** Everything there is to say about printing one part. */
+/** Everything there is to say about printing one part, this way. */
 export function describePart(
   t: Translate,
   part: PrintPart,
   input: { sheet: string; sheets: number; file: string },
+  opts: PrintOptions = DEFAULT_PRINT_OPTIONS,
 ): PartPrintInfo {
-  const { duplex } = PRINT_PAPER[part];
+  const { landscape } = PRINT_PAPER[part];
+  const duplex = duplexFor(part, opts);
   const paper = paperText(t, part);
   return {
     part,
@@ -175,6 +235,7 @@ export function describePart(
       n: input.sheets,
       sheet: input.sheet,
       paper,
+      orient: t(landscape ? 'print.orient.landscape' : 'print.orient.portrait'),
     }),
   };
 }
@@ -184,12 +245,18 @@ export const describeAlbumPart = (
   t: Translate,
   part: PrintPart,
   album: Pick<Album, 'pages' | 'title' | 'size' | 'lang'>,
+  opts: PrintOptions = DEFAULT_PRINT_OPTIONS,
 ) =>
-  describePart(t, part, {
-    sheet: sheetPaperFor(part, album.size),
-    sheets: printSheetCounts(album)[part],
-    file: printFileName(album.title, part, album.lang),
-  });
+  describePart(
+    t,
+    part,
+    {
+      sheet: sheetPaperFor(part, album.size),
+      sheets: printSheetCounts(album)[part],
+      file: printFileName(album.title, part, album.lang),
+    },
+    opts,
+  );
 
 /**
  * The note a parent pastes into a message to a copy shop: how to print, one

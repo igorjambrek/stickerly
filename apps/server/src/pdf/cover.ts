@@ -237,7 +237,10 @@ function drawInsideFront(panel: Panel, ctx: PrintContext): void {
     align: 'center',
   });
 
-  const steps = [ctx.t('pdf.how1'), ctx.t('pdf.how2'), ctx.t('pdf.how3')];
+  // Step two depends on where this job printed the numbers: a child told to
+  // turn the sticker over should find one there.
+  const findIt = ctx.numbers === 'backing' ? 'pdf.how2Back' : 'pdf.how2';
+  const steps = [ctx.t('pdf.how1'), ctx.t(findIt), ctx.t('pdf.how3')];
   steps.forEach((step, i) => {
     const y = 136 + i * 26;
     panel.shape({ k: 'circle', cx: 34, cy: y, r: 8, fill: palette.plaqueEdge });
