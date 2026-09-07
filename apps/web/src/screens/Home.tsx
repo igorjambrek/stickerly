@@ -24,7 +24,7 @@ import {
   ALBUM_SIZES,
   DEFAULT_ORIENTATION,
   DEFAULT_SLOTS_PER_PAGE,
-  PAPER_NAME,
+  PAGE_NAME,
   STICKER_ORIENTATIONS,
   TEMPLATES,
   getAvatar,
@@ -390,7 +390,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
                           aspectRatio: `${preview.page.w} / ${preview.page.h}`,
                         }}
                       >
-                        {PAPER_NAME[option]}
+                        {PAGE_NAME[option]}
                       </span>
                     </span>
                     <strong>{t(`home.size.${option}`)}</strong>
@@ -399,6 +399,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
                 );
               })}
             </div>
+            <p className="hint">{t('home.size.fold')}</p>
 
             <h3 className="group__name">{t('home.pickOrientation')}</h3>
             <div className="turngrid">
@@ -507,7 +508,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
               photo={coverPhoto}
             />
             <p className="preview__facts">
-              {t('editor.albumFormat', { paper: PAPER_NAME[size], n: layout.slotsPerPage })}
+              {t('editor.albumFormat', { paper: PAGE_NAME[size], n: layout.slotsPerPage })}
               {' · '}
               {t('home.perPageOpen', { m: layout.slotsPerPage * 2 })}
             </p>
@@ -557,7 +558,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
             <span className="makebar__text">
               <strong>{title.trim() || chosen.name[lang]}</strong>
               <span>
-                {PAPER_NAME[size]} · {t('home.perPage', { n: layout.slotsPerPage })}
+                {PAGE_NAME[size]} · {t('home.perPage', { n: layout.slotsPerPage })}
               </span>
             </span>
 
