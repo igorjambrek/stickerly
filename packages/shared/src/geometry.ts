@@ -37,8 +37,14 @@ export const ALBUM_SIZES: readonly AlbumSize[] = ['a4', 'a3'];
 
 export const DEFAULT_ALBUM_SIZE: AlbumSize = 'a3';
 
-/** What a grown-up calls the paper. */
+/** What a grown-up calls the paper that goes into the printer. */
 export const PAPER_NAME: Record<AlbumSize, string> = { a4: 'A4', a3: 'A3' };
+
+/**
+ * How big a page is once the sheet is folded in half — the size of the book a
+ * child ends up holding, and the one to show them when they are choosing.
+ */
+export const PAGE_NAME: Record<AlbumSize, string> = { a4: 'A5', a3: 'A4' };
 
 /**
  * The reference page.
