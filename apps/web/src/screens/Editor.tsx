@@ -48,6 +48,7 @@ import { PHONE, useMedia } from '../useMedia.ts';
 import { PageSheet } from '../components/PageSheet.tsx';
 import { InsideCoverSheet } from '../components/InsideCoverSheet.tsx';
 import { CoverDialog } from '../components/CoverDialog.tsx';
+import { ConfirmDialog } from '../components/ConfirmDialog.tsx';
 import { Dialog } from '../components/Dialog.tsx';
 import { LangSwitch } from '../components/LangSwitch.tsx';
 import { Presence } from '../components/Presence.tsx';
@@ -94,6 +95,7 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
   const [menuOpen, setMenuOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const stage = useRef<HTMLDivElement>(null);
@@ -299,7 +301,6 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
   }
 
   async function removeAlbum() {
-    if (!window.confirm(t('editor.confirmDeleteAlbum'))) return;
     setDeleting(true);
     try {
       await store.deleteAlbum();
@@ -307,6 +308,7 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
     } catch (err) {
       store.showToast((err as Error).message);
       setDeleting(false);
+      setConfirmingDelete(false);
     }
   }
 
@@ -370,7 +372,7 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
       key: 'deleteAlbum',
       icon: '🗑',
       label: t('editor.deleteAlbum'),
-      run: () => void removeAlbum(),
+      run: () => setConfirmingDelete(true),
       danger: true,
       disabled: deleting,
     },
@@ -677,6 +679,20 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
           onClose={() => setPrinting(false)}
         />
       )}
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={t('editor.deleteAlbum')}
+          confirmLabel={t('editor.deleteAlbumConfirm')}
+          danger
+          busy={deleting}
+          onConfirm={() => void removeAlbum()}
+          onCancel={() => setConfirmingDelete(false)}
+        >
+          {t('editor.confirmDeleteAlbum')}
+        </ConfirmDialog>
+      )}
+
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

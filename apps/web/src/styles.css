@@ -1113,6 +1113,14 @@ label.label {
   background: var(--paper);
 }
 
+/* A confirm dialog's whole body is the question, so it reads at body weight,
+   not the muted whisper `.hint` uses under something more important. */
+.confirm__text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
 /* A sheet: full width, off the bottom edge, and clear of the home indicator. */
 @media (max-width: 640px) {
   .scrim {
