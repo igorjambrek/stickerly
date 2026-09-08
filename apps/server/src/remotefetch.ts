@@ -27,7 +27,17 @@ import { request } from 'node:https';
 import { isIP, type LookupFunction } from 'node:net';
 
 export class BlockedAddress extends Error {}
-export class NotAPicture extends Error {}
+
+export class NotAPicture extends Error {
+  /** The HTTP status, when there was one. Read to decide whether to try again. */
+  constructor(
+    message: string,
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+
 export class TooBig extends Error {}
 
 const ALLOWED_PORTS = new Set(['', '443', '8443']);
@@ -115,7 +125,11 @@ export interface FetchOptions {
 }
 
 /** One hop: either the bytes, or where we are being sent next. */
-function hop(target: URL, options: FetchOptions): Promise<FetchedImage | { redirect: string }> {
+function hop(
+  target: URL,
+  options: FetchOptions,
+  sendReferer: boolean,
+): Promise<FetchedImage | { redirect: string }> {
   return new Promise((resolve, reject) => {
     const req = request(
       target,
@@ -126,7 +140,7 @@ function hop(target: URL, options: FetchOptions): Promise<FetchedImage | { redir
           accept: 'image/*',
           'user-agent': options.userAgent,
           // Some hosts serve a placeholder, or refuse outright, without one.
-          referer: `${target.protocol}//${target.host}/`,
+          ...(sendReferer ? { referer: `${target.protocol}//${target.host}/` } : {}),
         },
       },
       (res) => {
@@ -138,7 +152,7 @@ function hop(target: URL, options: FetchOptions): Promise<FetchedImage | { redir
         }
         if (status !== 200) {
           res.destroy();
-          return reject(new NotAPicture(`the picture answered ${status}`));
+          return reject(new NotAPicture(`the picture answered ${status}`, status));
         }
 
         const contentType = String(res.headers['content-type'] ?? '')
@@ -175,17 +189,39 @@ function hop(target: URL, options: FetchOptions): Promise<FetchedImage | { redir
   });
 }
 
-/**
- * Fetch one picture, following a few redirects, refusing anything that is not a
- * public https image inside the cap.
- */
-export async function fetchPicture(url: string, options: FetchOptions): Promise<FetchedImage> {
+/** Follow one address to its bytes, through however many redirects it takes. */
+async function walk(url: string, options: FetchOptions, sendReferer: boolean): Promise<FetchedImage> {
   let target = new URL(url);
   for (let redirects = 0; ; redirects++) {
     assertFetchable(target);
-    const result = await hop(target, options);
+    const result = await hop(target, options, sendReferer);
     if (!('redirect' in result)) return result;
     if (redirects >= MAX_REDIRECTS) throw new NotAPicture('that picture redirects too many times');
     target = new URL(result.redirect);
+  }
+}
+
+/**
+ * Fetch one picture, following a few redirects, refusing anything that is not a
+ * public https image inside the cap.
+ *
+ * Asked twice at most, and only ever about the referer. Hotlink protection is
+ * the commonest reason a picture that a browser can see is refused to us, and
+ * it cuts both ways: naming the picture's own host is what gets it served by a
+ * site that checks, and naming anything at all is what gets it refused by a
+ * CDN on a different host from the page — `i.pinimg.com` guarding
+ * `pinterest.com`, and every arrangement like it. There is no way to know which
+ * kind we are talking to, so a 401 or 403 is asked once more saying nothing
+ * about where we came from, which is what a browser opening the image directly
+ * looks like. Every other refusal is final, and the second attempt goes through
+ * exactly the same address checks as the first.
+ */
+export async function fetchPicture(url: string, options: FetchOptions): Promise<FetchedImage> {
+  try {
+    return await walk(url, options, true);
+  } catch (error) {
+    const refused = error instanceof NotAPicture && (error.status === 401 || error.status === 403);
+    if (!refused) throw error;
+    return walk(url, options, false);
   }
 }

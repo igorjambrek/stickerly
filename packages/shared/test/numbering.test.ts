@@ -2,7 +2,18 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { DEFAULT_CROP, type Page, type Slot } from '../src/types.ts';
 import { countEmpty, countFilled, numbersAreContiguous, renumber } from '../src/numbering.ts';
-import { coverPlacement, panCrop, photoPlacement, quarterTurn, turnCrop } from '../src/imaging.ts';
+import {
+  MIN_PRINT_DPI,
+  coverPlacement,
+  panCrop,
+  photoPlacement,
+  printDpi,
+  printsSharply,
+  quarterTurn,
+  turnCrop,
+} from '../src/imaging.ts';
+import { STICKER_INSET, stickerSize, stickerWindow } from '../src/geometry.ts';
+import { MM_PER_INCH } from '../src/units.ts';
 
 const page = (id: string, position: number, slotCount: number, filled = 0): Page => ({
   id,
@@ -185,5 +196,88 @@ describe('turning a photo', () => {
 
   it('keeps the turn through a pan, because a drag is not a turn', () => {
     assert.equal(panCrop(turned(90), sticker, 4000, 3000, 3, 3).rotate, 90);
+  });
+});
+
+describe('printDpi', () => {
+  const window = stickerWindow('portrait');
+
+  it('measures the picture window inside the peel border, not the sticker', () => {
+    const sticker = stickerSize('portrait');
+    assert.deepEqual(window, {
+      w: sticker.w - 2 * STICKER_INSET,
+      h: sticker.h - 2 * STICKER_INSET,
+    });
+  });
+
+  it('is the pixels spread over the millimetres they are printed across', () => {
+    // A photo the exact shape of the window is not cropped at all, so every
+    // one of its pixels lands on paper: 800 across 46.8 mm is 434 dpi.
+    const dpi = printDpi(window, 800, Math.round(800 * (window.h / window.w)), DEFAULT_CROP);
+    assert.equal(Math.round(dpi), Math.round((800 / window.w) * MM_PER_INCH));
+  });
+
+  it('counts only the pixels that survive the crop', () => {
+    // A wide photo in an upright window keeps its height and loses its width,
+    // so it prints from its short side however many pixels the long one has.
+    const wide = printDpi(window, 4000, 1000, DEFAULT_CROP);
+    const shorter = printDpi(window, 1200, 1000, DEFAULT_CROP);
+    assert.ok(Math.abs(wide - shorter) < 1e-9, 'extra width that is cropped away buys nothing');
+  });
+
+  it('falls with the zoom, because zoom spends pixels on less of the picture', () => {
+    const whole = printDpi(window, 1400, 1050, DEFAULT_CROP);
+    const closer = printDpi(window, 1400, 1050, { ...DEFAULT_CROP, scale: 2 });
+    assert.ok(Math.abs(closer - whole / 2) < 1e-9);
+  });
+
+  it('is unchanged by turning the photo, which moves no pixels', () => {
+    // The turn swaps which side covers which, so a square photo must read the
+    // same at every quarter and a rectangular one must read the same at 180.
+    const square = [0, 90, 180, 270].map((rotate) =>
+      printDpi(window, 1000, 1000, { ...DEFAULT_CROP, rotate }),
+    );
+    assert.ok(square.every((d) => Math.abs(d - square[0]!) < 1e-9));
+    assert.ok(
+      Math.abs(
+        printDpi(window, 1400, 1050, { ...DEFAULT_CROP, rotate: 180 }) -
+          printDpi(window, 1400, 1050, DEFAULT_CROP),
+      ) < 1e-9,
+    );
+  });
+
+  it('says nothing rather than Infinity about an image of no size', () => {
+    assert.equal(printDpi(window, 0, 0, DEFAULT_CROP), 0);
+    assert.equal(printsSharply(window, 0, 0, DEFAULT_CROP), false);
+  });
+
+  it('passes what the upload cap actually produces, at every ordinary shape', () => {
+    // `maxImageDimension` is 1400 on the long side. Nothing that comes out of
+    // it may trip the warning unzoomed, or the warning is about our own
+    // downsampling rather than about the child's photo.
+    for (const [w, h] of [
+      [1400, 1400],
+      [1400, 1050],
+      [1050, 1400],
+      [1400, 787],
+      [787, 1400],
+    ] as const) {
+      assert.ok(
+        printsSharply(window, w, h, DEFAULT_CROP),
+        `${w}x${h} from the upload cap should print sharply`,
+      );
+    }
+  });
+
+  it('catches a picture too small to print, of the size a search hit really is', () => {
+    assert.equal(printsSharply(window, 400, 300, DEFAULT_CROP), false);
+  });
+
+  it('turns over exactly at the floor it names', () => {
+    // Derived the other way round from `printDpi`: a square photo whose side
+    // covers the window's long side at exactly MIN_PRINT_DPI.
+    const px = Math.ceil((window.h / MM_PER_INCH) * MIN_PRINT_DPI);
+    assert.ok(printsSharply(window, px, px, DEFAULT_CROP));
+    assert.equal(printsSharply(window, px - 2, px - 2, DEFAULT_CROP), false);
   });
 });

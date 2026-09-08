@@ -22,7 +22,7 @@ import type { Album, PictureSearch } from '@album/shared';
 import { createApp } from '../src/app.ts';
 import { createTestDb } from '../src/db/index.ts';
 import { createPictures, wikimediaThumb } from '../src/pictures.ts';
-import { fetchPicture, isPublicAddress } from '../src/remotefetch.ts';
+import { NotAPicture, fetchPicture, isPublicAddress } from '../src/remotefetch.ts';
 
 const FETCH = { maxBytes: 1024, timeoutMs: 2000, userAgent: 'test' };
 
@@ -829,5 +829,79 @@ describe('the routes', () => {
     });
     assert.equal(res.status, 400);
     assert.match(((await res.json()) as { error: string }).error, /could not be fetched/);
+  });
+
+  /**
+   * A dropped picture is the one address a client gets to name.
+   *
+   * Everywhere else a fetched address was signed by this process, and that
+   * signature is what made a forged one useless. Here there is none — the
+   * address came off a drag the child made in another window — so the only
+   * thing standing between this route and the metadata service is
+   * `remotefetch.ts`. These are the tests that say so out loud: the guard is
+   * now load-bearing on its own, and this is the door it is bearing.
+   */
+  describe('a picture dragged in from another window', () => {
+    const drop = (url: unknown) =>
+      fetch(`${base}/api/albums/${token}/images/from-drop`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+
+    it('wants to be told which picture', async () => {
+      assert.equal((await drop(undefined)).status, 400);
+      assert.equal((await drop(12)).status, 400);
+    });
+
+    it('will not go anywhere but out onto the public internet', async () => {
+      const refused = [
+        'https://127.0.0.1/x.jpg', // loopback, by address
+        'https://[::1]/x.jpg', // loopback, wearing an IPv6 hat
+        'https://10.0.0.1/x.jpg', // private
+        'https://192.168.1.1/x.jpg', // private
+        'https://169.254.169.254/latest/meta-data/', // the whole reason
+        'https://localhost/x.jpg', // loopback, by name — the pinned lookup
+        'http://example.com/x.jpg', // no unencrypted hop
+        'file:///etc/passwd',
+        'https://example.com:22/x.jpg', // not a port a picture lives on
+        'not a url',
+      ];
+      for (const url of refused) {
+        const res = await drop(url);
+        assert.equal(res.status, 400, url);
+        assert.notEqual(res.status, 500, url);
+      }
+    });
+
+    it('says so plainly when the picture will not come, rather than failing', async () => {
+      // Sites refuse a server far more often than they refuse a browser, so
+      // this is the ordinary outcome and not an error in this app. The editor
+      // still holds the dropped file and sends that instead.
+      const res = await drop('https://nalepko-nothing-here.invalid/photo.jpg');
+      assert.equal(res.status, 400);
+      assert.match(((await res.json()) as { error: string }).error, /could not be fetched/);
+    });
+
+    /**
+     * The retry itself cannot be tested from here, and that is the address
+     * guard working: a stub server would have to live on 127.0.0.1, which is
+     * the one place `remotefetch` will never go. What is testable is the
+     * contract the retry reads — a refusal has to carry its status, or a 403
+     * is indistinguishable from a 404 and gets asked again for nothing.
+     */
+    it('carries the status of a refusal, which is what decides a second try', () => {
+      assert.equal(new NotAPicture('the picture answered 403', 403).status, 403);
+      assert.equal(new NotAPicture('the picture took too long').status, undefined);
+    });
+
+    it('is still scoped to an album, like every other way a picture gets in', async () => {
+      const res = await fetch(`${base}/api/albums/nope/images/from-drop`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: 'https://a.example/b.jpg' }),
+      });
+      assert.equal(res.status, 404);
+    });
   });
 });

@@ -31,6 +31,15 @@ const roleOf = (query: unknown): ImageRole =>
 
 const langOf = (value: unknown): Lang => (LANGS.includes(value as Lang) ? (value as Lang) : DEFAULT_LANG);
 
+/** Just the host of a dropped address, for a log line that has to stay honest. */
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return 'unparseable';
+  }
+};
+
 /** The first page unless told otherwise, and never a page before it — a
  *  nonsense value is not worth a 400 when "1" is a perfectly good answer. */
 const pageOf = (value: unknown): number => {
@@ -137,6 +146,76 @@ export function imageRoutes(repo: Repo, live: Realtime, pictures: Pictures) {
           // pick a different picture.
           req.log.warn({ err: error }, 'could not fetch a found picture');
           throw new Invalid('that picture could not be fetched, try another one');
+        }
+
+        const role = roleOf(req.query);
+        const imageId = repo.addImage(req.params.token, 0, 0);
+        const stored = await storeImage(albumId, imageId, downloaded.bytes, role);
+        repo.setImageSize(req.params.token, imageId, stored.w, stored.h);
+
+        reply.code(201);
+        return { image: { id: imageId, ...stored }, ...live.publish(req, req.params.token) };
+      },
+    );
+
+    /**
+     * Take a picture the child dragged in from another window.
+     *
+     * The usual way a photo arrives is not the file dialog: an image search is
+     * open in the next window and a result gets dragged across. The browser
+     * hands over a file when that happens, but the file is what the *results
+     * page* was showing — a thumbnail a few hundred pixels wide, which looks
+     * right on glass and prints as a mosaic. The drag also carries the link the
+     * thumbnail sat inside, and a search engine puts the original's address in
+     * that link; `betterPictureUrl` in `@album/shared` is what reads it out.
+     *
+     * So this is the one place the server will fetch an address a *client*
+     * named, and that is a real widening of the rule next door — a found
+     * picture is fetched only at an address this process signed, precisely so
+     * that this route could not exist by accident. It exists on purpose
+     * instead, with the signature traded for four things that do not depend on
+     * trusting the caller: `remotefetch.ts` unchanged (https only, every
+     * resolved address checked, the socket pinned to the one that was checked,
+     * redirects walked by hand, the read abandoned at the cap), the same rate
+     * limit a found picture pays, an album token to spend it against, and a
+     * switch to turn it off.
+     *
+     * Nothing here can lose a picture. Every failure is the child's own dropped
+     * file being uploaded the ordinary way instead, one round trip later, which
+     * is exactly what used to happen every time.
+     */
+    app.post<{ Params: TokenParams; Body: { url?: string } }>(
+      '/api/albums/:token/images/from-drop',
+      async (req, reply) => {
+        const albumId = repo.albumId(req.params.token);
+        if (!config.pictures.followDrops) throw new Invalid('dropped links are not fetched here');
+        if (!picks.take(req.ip)) throw new Invalid('too many pictures, wait a minute');
+        if (typeof req.body?.url !== 'string') throw new Invalid('which picture?');
+
+        let downloaded;
+        try {
+          downloaded = await fetchPicture(req.body.url, {
+            maxBytes: config.maxUploadBytes,
+            timeoutMs: config.pictures.timeoutMs,
+            userAgent: config.pictures.userAgent,
+          });
+        } catch (error) {
+          // Hotlink protection, a 403, a redirect to a login page, somewhere we
+          // will not follow: sites refuse a server far more often than they
+          // refuse a browser, so this is an ordinary outcome rather than a
+          // fault. The editor still holds the file and will send that instead.
+          //
+          // The host is logged with it because a refusal nobody can attribute
+          // is a refusal nobody can act on: which sites turn this server away
+          // is the only way to tell an unlucky picture from a door that never
+          // opens. The address itself is not — it is a child's dropped link,
+          // and the host is the part that is about the internet rather than
+          // about them.
+          req.log.info(
+            { err: error, host: hostOf(req.body.url) },
+            'could not fetch a dropped picture',
+          );
+          throw new Invalid('that picture could not be fetched');
         }
 
         const role = roleOf(req.query);

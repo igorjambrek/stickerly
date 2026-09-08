@@ -34,6 +34,7 @@ import {
 } from '@album/shared';
 import { api } from '../api.ts';
 import { readDeviceKey } from '../deviceKey.ts';
+import { uploadDrop, type DroppedPicture } from '../drop.ts';
 import { useIdentity } from '../identity.ts';
 import { useLangStore, useT } from '../lang.ts';
 import { suggestNickname } from '../nickname.ts';
@@ -129,17 +130,18 @@ function SpreadGlyph({ layout }: { layout: PageLayout }) {
   );
 }
 
-/** Read a picture the child has just chosen, before any album exists to put it in. */
-function readLocalPhoto(file: File): Promise<CoverPhoto> {
+/**
+ * Measure a picture the child has just chosen, before any album exists to put
+ * it in. `src` is an object URL for a file in hand, or the address a drag named
+ * when it brought no file with it; either way the preview is drawn from what
+ * can be shown now, and the drop is kept whole for `create` to send properly.
+ */
+function readLocalPhoto(src: string): Promise<CoverPhoto> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => resolve({ url, w: img.naturalWidth, h: img.naturalHeight });
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error('unreadable image'));
-    };
-    img.src = url;
+    img.onload = () => resolve({ url: src, w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => reject(new Error('unreadable image'));
+    img.src = src;
   });
 }
 
@@ -156,7 +158,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
   const [slotsPerPage, setSlotsPerPage] = useState<number>(DEFAULT_SLOTS_PER_PAGE[DEFAULT_ORIENTATION].a3);
   const [title, setTitle] = useState('');
   const [ownerName, setOwnerName] = useState('');
-  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverDrop, setCoverDrop] = useState<DroppedPicture | null>(null);
   const [coverPhoto, setCoverPhoto] = useState<CoverPhoto | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -225,15 +227,20 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
     if (photoUrl.current) URL.revokeObjectURL(photoUrl.current);
   }, []);
 
-  async function pickPhoto(file: File) {
+  async function pickPhoto(dropped: DroppedPicture) {
+    // Only a file can be shown from here — the original a drag named lives on
+    // somebody else's server and there is no album yet to fetch it into — so
+    // the preview uses whichever of the two this browser can already paint.
+    const objectUrl = dropped.file ? URL.createObjectURL(dropped.file) : null;
     try {
-      const photo = await readLocalPhoto(file);
+      const photo = await readLocalPhoto(objectUrl ?? dropped.url!);
       if (photoUrl.current) URL.revokeObjectURL(photoUrl.current);
-      photoUrl.current = photo.url;
-      setCoverFile(file);
+      photoUrl.current = objectUrl;
+      setCoverDrop(dropped);
       setCoverPhoto(photo);
       setError(null);
     } catch {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
       setError(t('print.error'));
     }
   }
@@ -241,7 +248,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
   function dropPhoto() {
     if (photoUrl.current) URL.revokeObjectURL(photoUrl.current);
     photoUrl.current = null;
-    setCoverFile(null);
+    setCoverDrop(null);
     setCoverPhoto(null);
   }
 
@@ -275,9 +282,11 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
         lang,
       });
 
-      // The photo can only be uploaded once the album it belongs to exists.
-      if (coverFile) {
-        const image = await api.uploadImage(made.editToken, coverFile, 'cover');
+      // The photo can only be uploaded once the album it belongs to exists —
+      // which is also the first moment the original a drag named can be gone
+      // after, so this is where the drop is finally spent rather than shown.
+      if (coverDrop) {
+        const image = await uploadDrop(made.editToken, coverDrop, 'cover');
         await api.setCover(made.editToken, { coverImageId: image.id });
       }
 
@@ -363,7 +372,7 @@ export function Home({ onOpen, onPassport }: { onOpen: (token: string) => void; 
               lang={lang}
               photo={coverPhoto}
               onPick={setVariantId}
-              onPhoto={(file) => void pickPhoto(file)}
+              onPhoto={(dropped) => void pickPhoto(dropped)}
               onRemovePhoto={dropPhoto}
             />
           </section>

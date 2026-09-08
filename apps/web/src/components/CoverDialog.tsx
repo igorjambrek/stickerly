@@ -19,8 +19,17 @@
 
 import { useRef, useState, type PointerEvent } from 'react';
 import type { Album, Template } from '@album/shared';
-import { DEFAULT_CROP, REF_PAGE, coverWantsPhoto, countFilled, panCrop } from '@album/shared';
+import {
+  DEFAULT_CROP,
+  REF_PAGE,
+  coverWantsPhoto,
+  countFilled,
+  layoutFor,
+  panCrop,
+  printsSharply,
+} from '@album/shared';
 import { api, type CoverPatch } from '../api.ts';
+import { uploadDrop, type DroppedPicture } from '../drop.ts';
 import { useFeatures } from '../features.ts';
 import { useT } from '../lang.ts';
 import { CoverPicker } from './CoverPicker.tsx';
@@ -61,6 +70,15 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
   const image = album.coverImageId ? album.images.find((i) => i.id === album.coverImageId) : undefined;
   const photo = image ? { url: api.imageUrl(token, image.id), w: image.w, h: image.h } : null;
   const framable = photo && coverWantsPhoto(template, album.coverVariantId);
+  /*
+   * A cover is judged against the album's real page, not `REF_PAGE`. Cropping
+   * happens in reference millimetres because only the proportions matter
+   * there, but resolution is a question about paper: the same photo is four
+   * times as sharp on a small album's A5 cover as on a large one's A4, and
+   * saying otherwise would warn a child off a picture that prints perfectly.
+   */
+  const coverPage = layoutFor(album.size, album.slotsPerPage, album.stickerOrientation).page;
+  const lowRes = !!image && !!framable && !printsSharply(coverPage, image.w, image.h, crop);
 
   /** However the picture arrived, it starts centred, unzoomed and upright. */
   function framePhoto(imageId: string) {
@@ -68,10 +86,10 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
     setCrop({ ...DEFAULT_CROP });
   }
 
-  async function upload(file: File) {
+  async function upload(dropped: DroppedPicture) {
     setUploading(true);
     try {
-      framePhoto((await api.uploadImage(token, file, 'cover')).id);
+      framePhoto((await uploadDrop(token, dropped, 'cover')).id);
     } finally {
       setUploading(false);
     }
@@ -155,6 +173,24 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
               crop={crop}
             />
             {framable && <p className="hint">{t('editor.move')}</p>}
+
+            {/*
+              Under the cover it is about, inside the preview's own stack
+              rather than beside it: `.coverdialog` is two columns, and a
+              banner between them would push the pickers into a row of their
+              own. A whole cover is a lot of paper for one photo to cover, so
+              this fires where a sticker's would not — and it still only tells,
+              never refuses. The child picked this picture for a reason, and a
+              soft cover they chose beats a sharp one they did not.
+            */}
+            {lowRes && (
+              <p className="lowres">
+                <span className="lowres__icon" aria-hidden="true">
+                  ⚠️
+                </span>
+                <span>{t('editor.lowResCover')}</span>
+              </p>
+            )}
           </div>
 
           <div className="coverdialog__controls">
@@ -176,7 +212,7 @@ export function CoverDialog({ album, template, token, onChange, onOwnerNameChang
               photo={photo}
               uploading={uploading}
               onPick={(coverVariantId) => onChange({ coverVariantId })}
-              onPhoto={(file) => void upload(file)}
+              onPhoto={(dropped) => void upload(dropped)}
               onRemovePhoto={() => onChange({ coverImageId: null })}
               onFind={features.pictureSearch ? () => setSearching(true) : undefined}
             />

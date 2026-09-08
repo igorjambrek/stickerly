@@ -197,7 +197,10 @@ Picture search works with no configuration, and better with some.
 | **Google** | `GOOGLE_API_KEY` and `GOOGLE_CSE_ID` | The open web, `safe=active`, 100 searches a day free. Used automatically once both are set; results carry no licence, and the editor says so under each one. |
 
 `PICTURE_SEARCH=off` switches the feature off entirely; the editor asks
-`/api/features` on load and stops offering it.
+`/api/features` on load and stops offering it. `DROP_FETCH=off` switches off
+only the fetching of pictures dragged in from another window (see *A dragged
+picture names a bigger copy of itself*); drops keep working, at the resolution
+the browser hands over.
 
 Openverse's weakness is language: it indexes mostly English titles, so `лав`
 finds a handful of lions where `lion` finds twenty. If your children search in
@@ -450,6 +453,25 @@ sees their change replaced, not merged.
 metadata (phone photos carry GPS coordinates, and this is a children's app),
 resized and re-encoded as JPEG.
 
+**A photo too small for the paper is marked, never refused.** A picture that
+looks fine on glass can arrive on paper as a mosaic, and the album finds out at
+the copy shop. So the editor works out what a printer will actually be left
+with — the photo's pixels divided by the millimetres it is stretched across —
+and puts a small amber mark on any sticker that will not print cleanly, with the
+reason in the sheet that can fix it. It has to be measured that way round rather
+than from the file's dimensions, because a wide photo in an upright sticker is
+cropped to its short side and prints from that alone, and zooming in spends the
+pixels that are left on less of the picture. Neither is visible in "4000 x 3000".
+
+A cover is asked the same question against a whole page, which is four times the
+paper of the biggest sticker, so it fails where a sticker would pass — and it is
+asked against the album's *real* page, so the same photo can be fine on a small
+album's cover and soft on a large one's. Nothing is ever blocked: a blurry
+picture a child chose is better than a sharp one they did not, and the warning
+says so. The threshold is a floor, not the target — 200 dpi against the 300 the
+files are sized for — because a warning that fires on every second photo is one
+nobody reads.
+
 **A picture can be found, not only owned.** A child who wants a lion has no
 photograph of one, so an empty sticker offers a third way in beside the drag and
 the camera: press the microphone, say `лав`, and pick one off a shelf. The speech
@@ -468,6 +490,29 @@ the address that was checked* (resolving twice is the DNS-rebinding hole),
 follows redirects by hand through the same checks, and abandons the read at the
 byte cap. From the row it writes onward, a found picture is exactly an uploaded
 one.
+
+**A dragged picture names a bigger copy of itself.** The commonest way a photo
+actually gets into an album is not the file dialog: a child opens an image
+search in the next window and drags a result across. The browser is helpful
+about that and hands over a file — but the file is the bytes the *results page*
+was showing, a thumbnail two or three hundred pixels wide. It looks right on
+glass and prints as a mosaic, and nothing about the drop says so. So the drop is
+read for more than its file. Beside it the drag carries the link the thumbnail
+sat inside, and an image search writes the original's address into that link to
+build its own preview panel; any page at all may name bigger copies in a
+`srcset`. Either is worth one try before falling back to the bytes in hand — and
+falling back is common, because a great many sites will serve a browser on their
+own page and refuse a server.
+
+This is the one address a *client* gets to name, and it is a real exception to
+the rule above rather than a hole in it. No signature could cover a URL that
+came off the child's own screen, so the signature is traded for four things that
+do not depend on trusting the caller: the same address guard as before, now
+load-bearing on its own; the same rate limit a found picture pays; an album
+token to spend it against; and `DROP_FETCH=off` for a deployment that would
+rather not open the door at all. Nothing can lose a picture either way — every
+failure ends in the dropped file being uploaded the ordinary way, one round trip
+later, which is exactly what used to happen every time.
 
 **Artwork is deterministic.** Decorations are scattered from a seeded PRNG rather
 than `Math.random`, so the browser and the PDF scatter them identically.

@@ -83,6 +83,20 @@ export const stickerSize = (orientation: StickerOrientation = DEFAULT_ORIENTATIO
 export const STICKER_RADIUS = 3;
 
 /**
+ * The white border a printed sticker keeps around its picture, to be peeled
+ * and held by. The picture stops here, so this — not the sticker — is the
+ * rectangle a photo actually has to fill, and the one its resolution is
+ * judged against.
+ */
+export const STICKER_INSET = 1.6;
+
+/** The picture window inside a sticker: the sticker less its peel border. */
+export const stickerWindow = (orientation: StickerOrientation = DEFAULT_ORIENTATION): Size => {
+  const sticker = stickerSize(orientation);
+  return { w: sticker.w - 2 * STICKER_INSET, h: sticker.h - 2 * STICKER_INSET };
+};
+
+/**
  * Sticker paper: A4 portrait, whatever size the album is and whichever way its
  * stickers stand.
  *
