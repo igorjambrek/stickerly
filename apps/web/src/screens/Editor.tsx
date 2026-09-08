@@ -31,6 +31,7 @@ import {
 } from '@dnd-kit/core';
 import type { Page, Slot } from '@album/shared';
 import {
+  DEFAULT_CROP,
   countEmpty,
   countFilled,
   getTemplate,
@@ -219,12 +220,17 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
   const shownPages = halves.filter((n) => n !== null).length;
   const openSlot = pages.flatMap((p) => p.slots).find((s) => s.id === openSlotId) ?? null;
 
-  /** Uploading and assigning are one action from the child's point of view. */
+  /**
+   * Uploading and assigning are one action from the child's point of view.
+   * A fresh photo starts centred and unturned even when it lands on a slot
+   * that already held one: dropping a new picture onto a full sticker replaces
+   * it outright, and the last photo's pan and zoom are not its framing.
+   */
   async function putPhoto(slot: Slot, file: File) {
     setUploading(true);
     try {
       const image = await api.uploadImage(token, file);
-      await store.setSlot(slot, { imageId: image.id });
+      await store.setSlot(slot, { imageId: image.id, crop: DEFAULT_CROP });
     } catch (err) {
       store.showToast((err as Error).message);
     } finally {

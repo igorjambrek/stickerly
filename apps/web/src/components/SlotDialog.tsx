@@ -185,8 +185,13 @@ export function SlotDialog({
 
         {image ? (
           <>
+            {/*
+              Dropping a picture onto the one already here replaces it, so the
+              child never has to empty the sticker first. Without a drop handler
+              the browser would just navigate to the dropped file.
+            */}
             <div
-              className="framer"
+              className={`framer${fileOver ? ' framer--over' : ''}`}
               ref={frameRef}
               onPointerDown={(e) => {
                 dragFrom.current = { x: e.clientX, y: e.clientY };
@@ -195,6 +200,12 @@ export function SlotDialog({
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setFileOver(true);
+              }}
+              onDragLeave={() => setFileOver(false)}
+              onDrop={onDrop}
             >
               <FramedPhoto
                 box={sticker}
@@ -213,6 +224,12 @@ export function SlotDialog({
 
             <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, margin: '10px 0 0' }}>
               {t('editor.move')}
+              {!touch && (
+                <>
+                  <br />
+                  {t('editor.replacePhoto')}
+                </>
+              )}
             </p>
 
             <label className="label" style={{ marginTop: 16 }}>

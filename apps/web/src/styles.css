@@ -1435,6 +1435,21 @@ label.label {
 .framer:active {
   cursor: grabbing;
 }
+/* A file is being dragged over the photo, and dropping it will replace it. */
+.framer--over {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+.framer--over::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* The photo and its wrapper never take the pointer: a press pans the framer,
+   and a drag stays over it rather than flickering as it crosses the picture. */
+.framer .framed,
 .framer img {
   pointer-events: none;
 }
