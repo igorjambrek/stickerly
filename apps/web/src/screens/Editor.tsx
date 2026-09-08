@@ -42,6 +42,7 @@ import {
   spreads,
 } from '@album/shared';
 import { api } from '../api.ts';
+import { uploadDrop, type DroppedPicture } from '../drop.ts';
 import { useLangStore, useT } from '../lang.ts';
 import { useLiveAlbum } from '../live.ts';
 import { rememberAlbum, useStore } from '../store.ts';
@@ -226,10 +227,16 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
    * that already held one: dropping a new picture onto a full sticker replaces
    * it outright, and the last photo's pan and zoom are not its framing.
    */
-  async function putPhoto(slot: Slot, file: File) {
+  /**
+   * However a picture arrived — dropped, chosen, photographed — it goes in the
+   * same way. `uploadDrop` is the one that knows a drag may name a better copy
+   * of itself than the one the browser handed over, and that failing to get it
+   * is not a failure worth telling a child about.
+   */
+  async function putPhoto(slot: Slot, dropped: DroppedPicture) {
     setUploading(true);
     try {
-      const image = await api.uploadImage(token, file);
+      const image = await uploadDrop(token, dropped);
       await store.setSlot(slot, { imageId: image.id, crop: DEFAULT_CROP });
     } catch (err) {
       store.showToast((err as Error).message);
@@ -343,7 +350,7 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
         active={page.id === activePage!.id}
         onActivate={() => setActivePageId(page.id)}
         onOpenSlot={(slot) => setOpenSlotId(slot.id)}
-        onDropFile={(slot, file) => void putPhoto(slot, file)}
+        onDropPicture={(slot, dropped) => void putPhoto(slot, dropped)}
         onRenamePage={(title) => void store.setPageTitle(page.id, title)}
       />
     );
@@ -645,7 +652,7 @@ export function Editor({ token, onHome }: { token: string; onHome: () => void })
           template={template}
           token={token}
           uploading={uploading}
-          onUpload={(file) => void putPhoto(openSlot, file)}
+          onUpload={(dropped) => void putPhoto(openSlot, dropped)}
           onChange={(patch) => void store.setSlot(openSlot, patch)}
           onTurn={
             slotSpanOf(layout, openSlot.position, otherOrientation(openSlot.orientation))

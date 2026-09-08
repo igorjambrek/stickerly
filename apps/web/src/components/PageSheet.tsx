@@ -25,10 +25,13 @@ import {
   artRng,
   getAvatar,
   pageHeaderRect,
+  printsSharply,
   slotSpanOf,
   stickerSize,
+  stickerWindow,
 } from '@album/shared';
 import { api } from '../api.ts';
+import { readDrop, type DroppedPicture } from '../drop.ts';
 import { useT } from '../lang.ts';
 import { FramedPhoto } from './FramedPhoto.tsx';
 import { ShapeCanvas } from './ShapeCanvas.tsx';
@@ -40,10 +43,10 @@ interface SlotViewProps {
   template: Template;
   token: string;
   onOpen: (slot: Slot) => void;
-  onDropFile: (slot: Slot, file: File) => void;
+  onDropPicture: (slot: Slot, dropped: DroppedPicture) => void;
 }
 
-function SlotView({ slot, album, layout, template, token, onOpen, onDropFile }: SlotViewProps) {
+function SlotView({ slot, album, layout, template, token, onOpen, onDropPicture }: SlotViewProps) {
   const t = useT();
   const [fileOver, setFileOver] = useState(false);
   // Only worth showing once there is someone to tell apart from.
@@ -54,15 +57,30 @@ function SlotView({ slot, album, layout, template, token, onOpen, onDropFile }: 
   // One cell, or the two a turned sticker took. Same call the PDF makes.
   const span = slotSpanOf(layout, slot.position, slot.orientation);
   const image = slot.imageId ? album.images.find((i) => i.id === slot.imageId) : undefined;
+  /*
+   * Whether this photo has the pixels for the 46.8 x 66.8 mm it is about to be
+   * printed across. Asked here, on the page, because a child fills an album one
+   * sticker at a time and finds out how it printed all at once: the mark has to
+   * be visible without opening anything. The judgement is `printsSharply` in
+   * `@album/shared`, which reads the crop — the same crop the PDF will — so a
+   * photo that is big enough until it is zoomed into says so.
+   */
+  const lowRes =
+    !!image && !printsSharply(stickerWindow(slot.orientation), image.w, image.h, slot.crop);
 
   const draggable = useDraggable({ id: slot.id, disabled: !slot.imageId });
   const droppable = useDroppable({ id: slot.id });
 
-  const handleFile = (event: DragEvent) => {
+  /*
+   * A drop carries more than the file the browser synthesised from it: see
+   * `drop.ts`. The picture the child dragged out of an image search is a
+   * thumbnail, and the address of the real one came along beside it.
+   */
+  const handleDrop = (event: DragEvent) => {
     event.preventDefault();
     setFileOver(false);
-    const file = event.dataTransfer.files?.[0];
-    if (file) onDropFile(slot, file);
+    const dropped = readDrop(event.dataTransfer);
+    if (dropped.file || dropped.url) onDropPicture(slot, dropped);
   };
 
   /**
@@ -105,8 +123,10 @@ function SlotView({ slot, album, layout, template, token, onOpen, onDropFile }: 
         setFileOver(true);
       }}
       onDragLeave={() => setFileOver(false)}
-      onDrop={handleFile}
-      aria-label={`${slot.number}${slot.label ? ` ${slot.label}` : ''}`}
+      onDrop={handleDrop}
+      aria-label={`${slot.number}${slot.label ? ` ${slot.label}` : ''}${
+        lowRes ? ` — ${t('editor.lowRes')}` : ''
+      }`}
     >
       <span className="slot__frame" style={{ borderRadius: cq(STICKER_RADIUS), borderWidth: cq(0.5) }}>
         {image ? (
@@ -165,6 +185,30 @@ function SlotView({ slot, album, layout, template, token, onOpen, onDropFile }: 
         </span>
       )}
 
+      {/*
+        Inside the corner rather than straddling it, unlike the number and the
+        avatar: those two belong to the sticker, and this one is a note about
+        the picture, so it sits on the picture it is about.
+      */}
+      {lowRes && (
+        <span
+          className="slot__warn"
+          title={t('editor.lowRes')}
+          aria-hidden="true"
+          style={{
+            right: 0,
+            bottom: 0,
+            transform: 'translate(-18%, -18%)',
+            width: cq(7.4),
+            height: cq(7.4),
+            fontSize: cq(4.2),
+            borderWidth: cq(0.6),
+          }}
+        >
+          !
+        </span>
+      )}
+
       <span
         className="slot__label"
         style={{
@@ -193,7 +237,7 @@ export interface PageSheetProps {
   active?: boolean;
   onActivate?: () => void;
   onOpenSlot: (slot: Slot) => void;
-  onDropFile: (slot: Slot, file: File) => void;
+  onDropPicture: (slot: Slot, dropped: DroppedPicture) => void;
   onRenamePage: (title: string) => void;
 }
 
@@ -207,7 +251,7 @@ export function PageSheet({
   active = true,
   onActivate,
   onOpenSlot,
-  onDropFile,
+  onDropPicture,
   onRenamePage,
 }: PageSheetProps) {
   const t = useT();
@@ -261,7 +305,7 @@ export function PageSheet({
           template={template}
           token={token}
           onOpen={onOpenSlot}
-          onDropFile={onDropFile}
+          onDropPicture={onDropPicture}
         />
       ))}
 

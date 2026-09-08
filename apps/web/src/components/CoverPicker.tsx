@@ -16,6 +16,7 @@ import type { DragEvent } from 'react';
 import { useState } from 'react';
 import type { Lang, Template } from '@album/shared';
 import { coverWantsPhoto, getVariant } from '@album/shared';
+import { asDrop, readDrop, type DroppedPicture } from '../drop.ts';
 import { useT } from '../lang.ts';
 import { CoverSheet, type CoverPhoto } from './CoverSheet.tsx';
 
@@ -26,7 +27,7 @@ export interface CoverPickerProps {
   photo: CoverPhoto | null;
   uploading?: boolean;
   onPick: (variantId: string) => void;
-  onPhoto: (file: File) => void;
+  onPhoto: (dropped: DroppedPicture) => void;
   onRemovePhoto: () => void;
   /**
    * Offered only where there is an album to fetch a picture into — the editor,
@@ -52,13 +53,15 @@ export function CoverPicker({
   const wantsPhoto = coverWantsPhoto(template, variantId);
 
   const take = (file: File | undefined | null) => {
-    if (file) onPhoto(file);
+    if (file) onPhoto(asDrop(file));
   };
 
+  /** A dragged cover names its original too, and a cover needs the pixels most. */
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
     setFileOver(false);
-    take(event.dataTransfer.files?.[0]);
+    const dropped = readDrop(event.dataTransfer);
+    if (dropped.file || dropped.url) onPhoto(dropped);
   };
 
   return (

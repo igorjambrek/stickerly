@@ -39,6 +39,8 @@
   --radius: 18px;
   --shadow: 0 2px 4px rgba(24, 36, 56, 0.06), 0 12px 28px rgba(24, 36, 56, 0.09);
   --danger: #d94848;
+  /* Amber, never red: a blurry photo is a thing to know, not a thing to fix. */
+  --warn: #c07a12;
 
   /*
    * Notches, rounded corners and the home indicator, named once so no rule
@@ -929,6 +931,25 @@ label.label {
   color: #fff;
   font-weight: 700;
   border: 2px solid #fff;
+  z-index: 2;
+}
+
+/*
+ * A photo that will print blurry, marked on the sticker holding it. Editor
+ * chrome, like the number's neighbour on the other corner: it sits inside the
+ * sticker outline so it can never take a millimetre the printed geometry has
+ * spoken for.
+ */
+.slot__warn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: var(--warn);
+  border: 2px solid #ffffff;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(24, 36, 56, 0.3);
   z-index: 2;
 }
 
@@ -1978,6 +1999,31 @@ label.label {
   color: var(--muted);
 }
 
+/*
+ * The same warning said in full, wherever there is room to act on it. Louder
+ * than `.hint` because it is news rather than instruction, and quieter than an
+ * error because nothing here is refused: the photo is already in the album and
+ * will print exactly as it is.
+ */
+.lowres {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+}
+
+.lowres__icon {
+  flex: none;
+  line-height: 1.45;
+}
+
 /* --- The cover, on screen ------------------------------------------------ */
 
 .cover-sheet {
@@ -2179,6 +2225,10 @@ label.label {
 }
 .coverdialog__preview .hint {
   text-align: center;
+  margin-top: 0;
+}
+/* The preview stack already spaces its own children. */
+.coverdialog__preview .lowres {
   margin-top: 0;
 }
 

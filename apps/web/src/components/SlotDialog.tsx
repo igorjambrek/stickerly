@@ -28,8 +28,9 @@
 
 import { useEffect, useRef, useState, type DragEvent, type PointerEvent } from 'react';
 import type { Album, Slot, Template } from '@album/shared';
-import { panCrop, stickerSize, turnCrop } from '@album/shared';
+import { panCrop, printsSharply, stickerSize, stickerWindow, turnCrop } from '@album/shared';
 import { api } from '../api.ts';
+import { asDrop, readDrop, type DroppedPicture } from '../drop.ts';
 import { useFeatures } from '../features.ts';
 import { useT } from '../lang.ts';
 import { useTouch } from '../useMedia.ts';
@@ -43,7 +44,7 @@ export interface SlotDialogProps {
   template: Template;
   token: string;
   uploading: boolean;
-  onUpload: (file: File) => void;
+  onUpload: (dropped: DroppedPicture) => void;
   onChange: (patch: { label?: string; imageId?: string | null; crop?: Slot['crop'] }) => void;
   /** Lay this sticker on its side, or stand it back up. Absent where the grid has no room. */
   onTurn?: () => void;
@@ -78,6 +79,14 @@ export function SlotDialog({
   const sticker = stickerSize(slot.orientation);
   const box = { x: 0, y: 0, w: sticker.w, h: sticker.h };
   const lyingDown = slot.orientation === 'landscape';
+  /*
+   * Asked against the crop being dragged rather than the saved one, so the
+   * warning answers the zoom slider while it moves. Zooming in is the usual
+   * way a photo that was big enough stops being: the pixels are spent on a
+   * smaller part of the picture, and nothing on screen shows it.
+   */
+  const lowRes =
+    !!image && !printsSharply(stickerWindow(slot.orientation), image.w, image.h, crop);
 
   // A different slot may be opened while this dialog is mounted.
   useEffect(() => {
@@ -116,13 +125,20 @@ export function SlotDialog({
   };
 
   const takeFile = (file: File | undefined | null) => {
-    if (file) onUpload(file);
+    if (file) onUpload(asDrop(file));
   };
 
+  /*
+    A drag from another window names the full-size picture beside the thumbnail
+    it hands over; `drop.ts` reads that out and prefers it. A file chosen from
+    the disk or taken with the camera has no such second address, so it goes
+    through `asDrop` and takes the same road one step later.
+  */
   const onDrop = (event: DragEvent) => {
     event.preventDefault();
     setFileOver(false);
-    takeFile(event.dataTransfer.files?.[0]);
+    const dropped = readDrop(event.dataTransfer);
+    if (dropped.file || dropped.url) onUpload(dropped);
   };
 
   /**
@@ -221,6 +237,21 @@ export function SlotDialog({
                 ↻ {t('editor.turnPhoto')}
               </button>
             </div>
+
+            {/*
+              Said here as well as on the page, because this is the only place
+              it can be acted on: the slider that caused it, the button that
+              replaces the photo and the way back to the shelf are all in this
+              sheet. Nothing is disabled — a blurry sticker still prints.
+            */}
+            {lowRes && (
+              <p className="lowres">
+                <span className="lowres__icon" aria-hidden="true">
+                  ⚠️
+                </span>
+                <span>{t('editor.lowResSticker')}</span>
+              </p>
+            )}
 
             <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, margin: '10px 0 0' }}>
               {t('editor.move')}

@@ -209,6 +209,20 @@ export const api = {
     return res.image;
   },
 
+  /**
+   * Take a picture at the address a drag named, rather than the thumbnail the
+   * browser handed over with it. Fails often and on purpose — plenty of sites
+   * will not serve a server — so every caller has the dropped file to fall
+   * back on.
+   */
+  async addDroppedPicture(token: string, url: string, role: 'sticker' | 'cover' = 'sticker') {
+    const res = await request<{ image: { id: string; w: number; h: number } }>(
+      `${albumBase(token)}/images/from-drop${role === 'cover' ? '?role=cover' : ''}`,
+      jsonBody('POST', { url }),
+    );
+    return res.image;
+  },
+
   printSummary: (token: string) => request<PrintSummary>(`${albumBase(token)}/print/summary`),
 
   /**

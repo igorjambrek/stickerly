@@ -6,8 +6,9 @@
  * editor preview and in the PDF, so it lives here and nowhere else.
  */
 
-import type { Rect } from './geometry.ts';
+import type { Rect, Size } from './geometry.ts';
 import type { Crop } from './types.ts';
+import { MM_PER_INCH } from './units.ts';
 
 /**
  * Where to draw an image so it completely covers `box`, honouring the crop.
@@ -132,3 +133,43 @@ export function panCrop(crop: Crop, box: Rect, imageW: number, imageH: number, d
     y: clamp01(crop.y - dy / image.h),
   };
 }
+
+/**
+ * How finely a picture will actually print, in dots per inch.
+ *
+ * This is the same question `photoPlacement` already answers, read the other
+ * way round. That function says how many millimetres of paper the picture is
+ * stretched across; divide its pixels by those millimetres and you have the
+ * resolution a printer is left with. Asking it through the placement rather
+ * than from the file's own dimensions is the whole point: a photo is fitted to
+ * *cover* its window, so a wide picture in a tall sticker has most of its
+ * width cropped away and prints from its height alone, and zooming in spends
+ * pixels on a smaller part of the picture. Both are invisible in the file's
+ * size and obvious on paper.
+ *
+ * `box` is the window the picture is drawn into, in millimetres — a sticker's
+ * `stickerWindow()`, or the album page for a cover.
+ */
+export function printDpi(box: Size, imageW: number, imageH: number, crop: Crop): number {
+  if (!(imageW > 0) || !(imageH > 0)) return 0;
+  const { image } = photoPlacement({ x: 0, y: 0, w: box.w, h: box.h }, imageW, imageH, crop);
+  // Aspect is preserved, so either axis gives the same answer.
+  return (imageW / image.w) * MM_PER_INCH;
+}
+
+/**
+ * The resolution below which a printed picture starts to show its pixels.
+ *
+ * `PRINT_DPI` in `units.ts` (300) is what we aim for and what the derivatives
+ * are sized to; this is the lower number, the floor under which a photo falls
+ * apart visibly on paper. The gap between them is deliberate: a warning at 299
+ * dpi would fire on a perfectly good 16:9 phone photo — our own upload cap
+ * lands one of those at almost exactly 300 — and a warning a child sees on
+ * every second picture is one they stop reading. So this marks the point where
+ * the print is genuinely worse, not the point where it stops being ideal.
+ */
+export const MIN_PRINT_DPI = 200;
+
+/** Whether this picture has the pixels for the window it will be printed in. */
+export const printsSharply = (box: Size, imageW: number, imageH: number, crop: Crop): boolean =>
+  printDpi(box, imageW, imageH, crop) >= MIN_PRINT_DPI;

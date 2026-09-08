@@ -43,10 +43,28 @@ export const config = {
     return process.env.WEB_DIST ?? path.join(repoRoot, 'apps', 'web', 'dist');
   },
 
-  /** Photos are resized down to this before storage; big enough to zoom into. */
+  /**
+   * Photos are resized down to this before storage; big enough to zoom into.
+   *
+   * A sticker's picture window is 46.8 x 66.8 mm, so 1400 px is 300 dpi even
+   * for a wide photo cropped to an upright sticker, and far more than that for
+   * anything better oriented. What is left over is zoom headroom.
+   */
   maxImageDimension: 1400,
-  /** A cover photo fills a whole page, so it needs more pixels than a sticker. */
-  maxCoverDimension: 2400,
+  /**
+   * A cover photo fills a whole page, so it needs more pixels than a sticker.
+   *
+   * A large album's cover is a full A4 sheet — four times the paper of the
+   * biggest sticker — and the editor now tells a child when a picture is too
+   * small for the page it is going on. That warning is only fair if a good
+   * photo can pass it, and it is this cap, not the child's camera, that
+   * decides: at 2400 even a perfect upright photo landed at 205 dpi, a
+   * hair over the floor, so any zoom at all tipped it under and the warning
+   * blamed a child for our own downsampling. 3200 puts an upright photo near
+   * 275 dpi and leaves a wide one to fail honestly, because a wide photo on an
+   * upright cover really does throw half its pixels away.
+   */
+  maxCoverDimension: 3200,
   jpegQuality: 84,
   thumbDimension: 320,
 
@@ -105,6 +123,22 @@ export const config = {
       maxPicksPerMinute: 30,
       /** Named honestly, so a provider can see who is asking and rate-limit us. */
       userAgent: 'Nalepko/1.0 (sticker album maker for children)',
+
+      /**
+       * Whether a picture dragged in from another window may be fetched at the
+       * address the drag names.
+       *
+       * Its own switch, and not `PICTURE_SEARCH`, because it is a different
+       * bargain. A found picture is fetched at an address this process signed;
+       * this one is fetched at an address a client sent, which is a door we did
+       * not previously have. `remotefetch.ts` is still the whole defence and
+       * loses nothing — https only, public addresses only, socket pinned,
+       * redirects re-checked, bytes capped — but a deployment that would rather
+       * not let a client name a host at all can say so here, and lose only the
+       * resolution, never the picture: the drop falls back to the bytes the
+       * browser already handed over.
+       */
+      followDrops: (process.env.DROP_FETCH ?? '') !== 'off',
     };
   },
 } as const;

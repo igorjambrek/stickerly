@@ -7,7 +7,7 @@
 
 import type { PDFImage } from 'pdf-lib';
 import type { Album, ArtFn, NumberSide, PageLayout, Palette, Rect, Size, Slot, Template, Translate } from '@album/shared';
-import { CALIBRATION, STICKER_RADIUS, stickerSize } from '@album/shared';
+import { CALIBRATION, STICKER_INSET, STICKER_RADIUS, stickerSize } from '@album/shared';
 import type { Fonts } from './fonts.ts';
 import { Panel } from './canvas.ts';
 
@@ -132,9 +132,13 @@ export function drawSlotOutline(page: Panel, ctx: PrintContext, box: Rect, label
  * sticker that is now wider than it is tall.
  */
 export function drawSticker(sticker: Panel, ctx: PrintContext, slot: Slot): void {
-  const inset = 1.6;
   const size: Size = stickerSize(slot.orientation);
-  const inner: Rect = { x: inset, y: inset, w: size.w - 2 * inset, h: size.h - 2 * inset };
+  const inner: Rect = {
+    x: STICKER_INSET,
+    y: STICKER_INSET,
+    w: size.w - 2 * STICKER_INSET,
+    h: size.h - 2 * STICKER_INSET,
+  };
 
   // The white peel border.
   sticker.shape({ k: 'rect', x: 0, y: 0, w: size.w, h: size.h, rx: STICKER_RADIUS, fill: '#FFFFFF' });
