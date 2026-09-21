@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { describe, it } from 'node:test';
 import { inflateSync } from 'node:zlib';
+import fontkit from '@pdf-lib/fontkit';
 import { PDFArray, PDFDocument, PDFRawStream } from 'pdf-lib';
 import type { Album, AlbumSize, PrintPart } from '@album/shared';
 import {
@@ -13,8 +16,11 @@ import {
   mmToPt,
   printFileName,
   sheetPaperFor,
+  stickerBackRect,
+  stickerSheetRect,
   stickersPerSheet,
 } from '@album/shared';
+import { FONT_DIR, FONT_FILES } from '../src/pdf/fonts.ts';
 import { buildCoverPdf, buildPagesPdf, buildStickersPdf } from '../src/pdf/index.ts';
 import { fixtureImageLoader, makeFixtureAlbum } from '../src/testing/fixtures.ts';
 
@@ -60,6 +66,36 @@ const photosOn = (ops: string) => (ops.match(/\/Image-\d+ Do/g) ?? []).length;
 
 /** How many separate pieces of text a page draws: pdf-lib opens each with BT. */
 const textsOn = (ops: string) => (ops.match(/^BT$/gm) ?? []).length;
+
+/**
+ * Every string a page sets, with the font, the size in points and the baseline
+ * it was put on. pdf-lib names the font, then the size, then the text matrix.
+ */
+interface Placement {
+  font: string;
+  size: number;
+  x: number;
+  y: number;
+}
+
+function textPlacements(ops: string): Placement[] {
+  const re = /\/([A-Za-z]+)-[\w-]+ ([\d.]+) Tf[\s\S]{0,80}?1 0 0 1 ([-\d.]+) ([-\d.]+) Tm/g;
+  return [...ops.matchAll(re)].map((m) => ({
+    font: m[1]!,
+    size: Number(m[2]),
+    x: Number(m[3]),
+    y: Number(m[4]),
+  }));
+}
+
+/**
+ * Where a figure's ink reaches above the baseline, read out of the font file
+ * rather than out of the code under test.
+ */
+function capRiseOfFile(file: string): number {
+  const font = fontkit.create(readFileSync(path.join(FONT_DIR, file)));
+  return font.capHeight / font.unitsPerEm;
+}
 
 const assertSize = (got: { w: number; h: number }, wMm: number, hMm: number, what: string) => {
   assert.ok(Math.abs(got.w - mmToPt(wMm)) < TOLERANCE, `${what} width: ${got.w} vs ${mmToPt(wMm)}`);
@@ -175,6 +211,39 @@ describe('stickers pdf', () => {
     const [front, back] = [pages[0]!, pages[1]!];
     assert.equal(photosOn(front), stickersPerSheet('full'), 'the front carries the pictures');
     assert.equal(photosOn(back), 0, 'and the back carries nothing but the numbers');
+  });
+
+  it('centres every number on the back exactly behind its own sticker', async () => {
+    // This is the one measurement in the job that cannot be checked by looking
+    // at either side on its own, and the failure mode is a numeral sitting
+    // most of a millimetre off its sticker — invisible in the file, and on
+    // paper indistinguishable from a printer whose duplex is out of register.
+    // So the ink is measured here, against the cap height of the very font
+    // that draws it: a figure stands on the baseline and reaches that height,
+    // and the middle of it has to land on the middle of the cell.
+    const album = makeFixtureAlbum({ pages: 5, filled: 30 });
+    const result = await buildStickersPdf({ album, loadImage });
+    const back = (await pageOperators(result.bytes))[1]!;
+    const sheetTop = mmToPt(STICKER_SHEET.h);
+    const rise = capRiseOfFile(FONT_FILES.displayBold);
+
+    const numerals = textPlacements(back).filter((t) => t.font === 'Comfortaa');
+    assert.equal(numerals.length, stickersPerSheet('full'), 'one number per cell');
+
+    const inkCentres = numerals.map((n) => sheetTop - (n.y + (rise * n.size) / 2)).sort((a, b) => a - b);
+    const wanted = Array.from({ length: stickersPerSheet('full') }, (_, i) => {
+      const cell = stickerBackRect(i, 'full');
+      const front = stickerSheetRect(i, 'full');
+      // The short-edge flip is what makes those two the same place on the
+      // paper: a back cell's middle is its front cell's middle, measured from
+      // the other end of the sheet.
+      assert.equal(cell.y + cell.h / 2, STICKER_SHEET.h - (front.y + front.h / 2), `cell ${i} is behind its sticker`);
+      return mmToPt(cell.y + cell.h / 2);
+    }).sort((a, b) => a - b);
+
+    for (const [i, got] of inkCentres.entries()) {
+      assert.ok(Math.abs(got - wanted[i]!) < TOLERANCE, `numeral ${i}: ink centre ${got} vs cell centre ${wanted[i]}`);
+    }
   });
 
   it('puts the number back on the picture when the job asks it to', async () => {

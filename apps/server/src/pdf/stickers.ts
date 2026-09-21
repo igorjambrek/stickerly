@@ -40,7 +40,7 @@ import {
 } from '@album/shared';
 import { Panel } from './canvas.ts';
 import type { PrintContext } from './common.ts';
-import { drawCalibrationRuler, drawSticker } from './common.ts';
+import { drawCalibrationRuler, drawCentredNumeral, drawSticker } from './common.ts';
 
 const chunk = <T,>(items: T[], size: number): T[][] => {
   const out: T[][] = [];
@@ -89,7 +89,9 @@ function drawFront(sheet: Panel, ctx: PrintContext, batch: Slot[], layout: Sheet
  * holds toner far worse than the coated face does, and a numeral alone on
  * white is the most legible thing per drop of ink. The cut guides are repeated
  * so that a duplex printer that has shifted the back side by a few millimetres
- * says so before anybody starts cutting.
+ * says so before anybody starts cutting — which only works if what we draw is
+ * exact, so the numeral is centred on its ink through `drawCentredNumeral`
+ * rather than on a guess at where the font puts it.
  *
  * Every number stands upright, behind a lying sticker as much as an upright
  * one: this side of the paper is read as one grid of numbers, and turning some
@@ -99,16 +101,12 @@ function drawBacks(sheet: Panel, ctx: PrintContext, batch: Slot[], layout: Sheet
   batch.forEach((slot, i) => {
     const cell = stickerBackRect(i, layout);
     drawCutGuide(sheet, cell);
-    const size = 22;
-    sheet.fitText(String(slot.number), {
-      x: cell.x + cell.w / 2,
-      y: cell.y + cell.h / 2 + size * 0.36,
-      size,
-      maxWidth: cell.w - 12,
-      font: ctx.fonts.displayBold,
-      color: ctx.palette.badge,
-      align: 'center',
-    });
+    drawCentredNumeral(
+      sheet,
+      slot.number,
+      { cx: cell.x + cell.w / 2, cy: cell.y + cell.h / 2, maxWidth: cell.w - 12 },
+      { size: 22, font: ctx.fonts.displayBold, color: ctx.palette.badge },
+    );
   });
 }
 
