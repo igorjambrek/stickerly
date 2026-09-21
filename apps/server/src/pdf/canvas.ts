@@ -32,6 +32,15 @@ import { mmToPt, pathToSvgD, photoPlacement, ptToMm, shapeToPathCmds } from '@al
 
 export type Align = 'left' | 'center' | 'right';
 
+/** What it takes to know how big a string will be set. */
+export interface FitOptions {
+  size: number;
+  font: PDFFont;
+  maxWidth: number;
+  minSize?: number;
+  letterSpacing?: number;
+}
+
 export interface TextOptions {
   /** Baseline position, millimetres y-down from the panel's top-left. */
   x: number;
@@ -191,15 +200,28 @@ export class Panel {
   }
 
   /**
-   * Draw a single line, shrinking the font until it fits `maxWidth`.
-   * Returns the size actually used, so callers can align things underneath.
+   * The largest size at or below `o.size` at which `text` fits `maxWidth`.
+   *
+   * Separate from `fitText` because anything centred on its ink rather than
+   * sat on a baseline has to know the size *before* it is drawn: shrinking a
+   * numeral also shortens the cap height it is centred by, and by the time
+   * `fitText` returns it is already on the page.
    */
-  fitText(text: string, o: TextOptions & { maxWidth: number; minSize?: number }): number {
+  fittedSize(text: string, o: FitOptions): number {
     let size = o.size;
     const min = o.minSize ?? o.size * 0.45;
     while (size > min && this.widthOf(text, o.font, size, o.letterSpacing) > o.maxWidth) {
       size -= 0.25;
     }
+    return size;
+  }
+
+  /**
+   * Draw a single line, shrinking the font until it fits `maxWidth`.
+   * Returns the size actually used, so callers can align things underneath.
+   */
+  fitText(text: string, o: TextOptions & { maxWidth: number; minSize?: number }): number {
+    const size = this.fittedSize(text, o);
     this.text(text, { ...o, size });
     return size;
   }

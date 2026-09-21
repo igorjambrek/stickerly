@@ -5,10 +5,11 @@
  * geometry package. These functions only decide what a thing looks like.
  */
 
-import type { PDFImage } from 'pdf-lib';
+import type { PDFFont, PDFImage } from 'pdf-lib';
 import type { Album, ArtFn, NumberSide, PageLayout, Palette, Rect, Size, Slot, Template, Translate } from '@album/shared';
 import { CALIBRATION, STICKER_INSET, STICKER_RADIUS, stickerSize } from '@album/shared';
 import type { Fonts } from './fonts.ts';
+import { capRise } from './fonts.ts';
 import { Panel } from './canvas.ts';
 
 /**
@@ -43,6 +44,38 @@ export interface PrintContext {
   images: Map<string, PDFImage>;
 }
 
+/**
+ * A sticker's number, centred on a point.
+ *
+ * Used twice for the same number: in the badge on the picture, and alone in
+ * the middle of the cell on the backing paper behind it. Both have to centre
+ * the numeral the same way, because a child matches one to the other.
+ *
+ * Figures stand on the baseline and rise to the cap height, so centring one
+ * means dropping the baseline half a cap height below the middle of whatever
+ * it sits in — half of the *shrunk* cap height when a three-digit number had
+ * to be squeezed in, which is why the size is settled before anything is
+ * drawn. Both halves of that were wrong before, and on the 22 mm numeral
+ * printed behind a sticker the error looked like a misregistered duplex.
+ */
+export function drawCentredNumeral(
+  panel: Panel,
+  n: number,
+  at: { cx: number; cy: number; maxWidth: number },
+  paint: { size: number; font: PDFFont; color: string; minSize?: number },
+): void {
+  const text = String(n);
+  const size = panel.fittedSize(text, { ...paint, maxWidth: at.maxWidth });
+  panel.text(text, {
+    x: at.cx,
+    y: at.cy + (capRise(paint.font) * size) / 2,
+    size,
+    font: paint.font,
+    color: paint.color,
+    align: 'center',
+  });
+}
+
 /** The auto-assigned sticker number, in a solid circle. */
 export function drawNumberBadge(
   panel: Panel,
@@ -57,15 +90,7 @@ export function drawNumberBadge(
   panel.shape({ k: 'circle', cx, cy, r, fill });
   panel.shape({ k: 'circle', cx, cy, r, stroke: '#FFFFFF', sw: r * 0.16 });
   const size = n >= 100 ? r * 0.95 : r * 1.15;
-  panel.fitText(String(n), {
-    x: cx,
-    y: cy + size * 0.36,
-    size,
-    maxWidth: r * 1.6,
-    font: ctx.fonts.displayBold,
-    color: ink,
-    align: 'center',
-  });
+  drawCentredNumeral(panel, n, { cx, cy, maxWidth: r * 1.6 }, { size, font: ctx.fonts.displayBold, color: ink });
 }
 
 /**
