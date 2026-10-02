@@ -31,20 +31,30 @@ variable "name" {
 }
 
 # --- Always Free envelope ------------------------------------------------
-# The Ampere A1 allowance is 4 OCPUs and 24 GB of memory in total, and 200 GB
-# of block storage. These defaults spend the compute allowance on one instance
-# and a small fraction of the storage. Raising either starts costing money.
+# The Ampere A1 allowance is 2 OCPUs and 12 GB of memory in total (it was
+# 4 / 24 until Oracle halved it), and 200 GB of block storage, shared by every
+# instance in the tenancy. Going over it is not a bill: the instance is
+# disabled once the trial ends, and deleted 30 days later.
+#
+# Sized to what the album really uses rather than to the allowance, for a
+# second reason: Oracle reclaims an instance whose CPU p95, network and memory
+# all stay under 20% for a week. Memory is the only one of the three this app
+# can stay above, so memory_in_gbs has to stay small. Measured (MemoryUtilization
+# in oci_computeagent): ~1 GB in use on 24 GB, but only ~0.6 GB on 3 GB — the
+# box uses less when it has less, which put 3 GB right on the 20% line. On 2 GB
+# it is ~30%. A full image build on 1 OCPU / 2 GB, with the app still running
+# beside it, peaks at 1.25 GB and takes four minutes.
 
 variable "ocpus" {
-  description = "OCPUs for the instance. 4 is the whole Always Free A1 allowance."
+  description = "OCPUs for the instance. The Always Free A1 allowance is 2 in total."
   type        = number
-  default     = 4
+  default     = 1
 }
 
 variable "memory_in_gbs" {
-  description = "Memory for the instance. 24 is the whole Always Free A1 allowance."
+  description = "Memory for the instance. The Always Free A1 allowance is 12 in total."
   type        = number
-  default     = 24
+  default     = 2
 }
 
 variable "boot_volume_size_in_gbs" {
