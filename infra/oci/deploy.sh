@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Copy this working tree to the OCI instance and (re)build it there.
 #
-# The repo is the unit of deployment, not an image registry: the instance has
-# four Ampere cores and builds the ARM image itself in a couple of minutes,
-# which is one less thing to host. Run from the repo root:
+# The repo is the unit of deployment, not an image registry: the instance
+# builds the ARM image itself, which is one less thing to host. Run from the
+# repo root:
 #
 #   infra/oci/deploy.sh
 #

@@ -225,7 +225,9 @@ Dockerfile compiles it in a `deps` stage and copies the result forward.
 ### On Oracle Cloud
 
 [infra/oci](infra/oci) builds the whole thing with Terraform inside the Always
-Free allowance (one `VM.Standard.A1.Flex`, 4 OCPUs, 24 GB, 50 GB boot volume):
+Free allowance (one `VM.Standard.A1.Flex`, 1 OCPU, 2 GB, 50 GB boot volume —
+sized to what it uses rather than to the allowance, which is 2 OCPUs and 12 GB
+in all; see [variables.tf](infra/oci/variables.tf) for why that matters):
 
 ```bash
 terraform -chdir=infra/oci init
